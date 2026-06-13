@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-mix_rml.py：多模型可选（NB / SVM / KNN / DT / RF / AdaBoost）+ LOSO 留一验证
-适配新数据结构：DeepLearning/data_rml/<Population>/<task>/<number>.csv
-- Population ∈ {MCI, HC}
-- task ∈ {1,2,3,4}  (1/2→label=0, 3/4→label=1)
-- number: MCI=1..26, HC=1..42（各自独立编号）
+mix_rml_loso.py：多模型可选（NB / SVM / KNN / DT / RF / AdaBoost）+ 留一验证（LOSO）
 
-运行示例：
-python mix_rml.py --data-root DeepLearning/data_rml --models all --datasets MCI,HC,ALL
-python mix_rml.py --data-root DeepLearning/data_rml --models svm,rf --datasets ALL
+更新点：
+- 输出目录：Binary_5K_dependent_68/<MODEL>/<DATASET>/...
+- 对每个 CSV：先窗口化，再按时间顺序均分为5份（除不尽分给前面的份）=> subject_data[sid]['folds'][0..4]
+- 从磁盘扫描实际存在的编号，避免只出 MCI 的问题
+
+
+# 在项目根目录执行（包含 mix_rml_loso.py）
+CUDA_VISIBLE_DEVICES=4 python Binary_LOSO_68/mix.py --data-root data_rml --result-dir Binary_LOSO_68 --models nb,dt      --datasets MCI,HC,ALL & \
+CUDA_VISIBLE_DEVICES=5 python Binary_LOSO_68/mix.py --data-root data_rml --result-dir Binary_LOSO_68 --models svm         --datasets MCI,HC,ALL & \
+CUDA_VISIBLE_DEVICES=6 python Binary_LOSO_68/mix.py --data-root data_rml --result-dir Binary_LOSO_68 --models rf          --datasets MCI,HC,ALL & \
+CUDA_VISIBLE_DEVICES=7 python Binary_LOSO_68/mix.py --data-root data_rml --result-dir Binary_LOSO_68 --models knn,ab      --datasets MCI,HC,ALL & \
+wait
 """
 
-import os, argparse
+import os, re, argparse
 import numpy as np
 import pandas as pd
 import torch
@@ -31,7 +36,7 @@ from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 # ------------------------ 全局显示设置 ------------------------
 rcParams['font.family'] = ['WenQuanYi Micro Hei']
@@ -47,9 +52,21 @@ REQUIRED_COLUMNS = [
     'combinedEye_gaze_X','combinedEye_gaze_Y','combinedEye_gaze_Z'
 ]
 
-# ------------------------ 数据窗口化 ------------------------
+# ------------------------ 工具函数 ------------------------
+def split_into_k_parts(n: int, k: int = 5):
+    """把 n 个元素按顺序均分成 k 份；余数加给前面的份。返回 [(s,e), ...)，e 不含"""
+    if n <= 0:
+        return [(0, 0)] * k
+    q, r = divmod(n, k)
+    sizes = [q + 1 if i < r else q for i in range(k)]
+    bounds, cur = [], 0
+    for size in sizes:
+        bounds.append((cur, cur + size))
+        cur += size
+    return bounds
+
 def windowize_from_array(arr_ch_t: np.ndarray, label: int, window_size: int = 240, overlap: float = 0.0):
-    """arr_ch_t: (channels, time). 返回 list[torch.Tensor(1,-1)], list[int]"""
+    """arr_ch_t: (channels, time). 返回 list[np.ndarray(1,-1)], list[int]（按时间顺序）"""
     if arr_ch_t.ndim != 2:
         return [], []
     C, T = arr_ch_t.shape
@@ -61,29 +78,58 @@ def windowize_from_array(arr_ch_t: np.ndarray, label: int, window_size: int = 24
     for i in range(n_seg):
         seg = arr_ch_t[:, i*step:i*step+window_size].astype('float64')
         seg = np.nan_to_num(seg)
-        X.append(torch.from_numpy(seg).reshape(1, -1))
+        X.append(seg.reshape(1, -1))
         Y.append(label)
     return X, Y
 
-# ------------------------ LOSO：按受试者聚合后窗口化 ------------------------
-def build_loso_subject_windows(data_root, subjects, required_columns, window_size, overlap):
+def safe_read_csv(path):
+    try:
+        return pd.read_csv(path)
+    except Exception as e:
+        print(f'读取失败: {path} | {e}')
+        return None
+
+def list_numeric_stems(dirpath):
+    """列出目录下 .csv 的纯数字文件名（去扩展名），返回 set[int]"""
+    out = set()
+    if not os.path.isdir(dirpath):
+        return out
+    for fn in os.listdir(dirpath):
+        if not fn.lower().endswith('.csv'):
+            continue
+        stem = os.path.splitext(fn)[0]
+        if re.fullmatch(r'\d+', stem):
+            out.add(int(stem))
+    return out
+
+def scan_subject_numbers(data_root, pop):
+    """扫描 data_root/<pop>/<1..4>/ 下存在的数字文件名，聚合为编号集合"""
+    nums = set()
+    for task in (1, 2, 3, 4):
+        d = os.path.join(data_root, pop, str(task))
+        nums |= list_numeric_stems(d)
+    return sorted(nums)
+
+# ------------------------ 构建每个受试者的窗口数据（含5份信息） ------------------------
+def build_subject_windows(data_root, subjects, required_columns, window_size, overlap):
     """
-    返回 dict: key=(pop,num)，value={'X':list[tensor(1,-1)], 'Y':list[int]}
-    将该 (pop,num) 的所有 task(1..4) 读取、窗口化后合并。
+    返回：{sid: {'X': list[Tensor(1,-1)], 'Y': list[int], 'folds': [list[(np.ndarray,label)]*5]}}
     """
-    task_label = {1:0, 2:0, 3:1, 4:1}
-    per_subj = {}
+    subject_data = {}
+    task_label = {1: 0, 2: 0, 3: 1, 4: 1}
 
     for (pop, num) in subjects:
-        X_all, Y_all = [], []
-        for task in (1,2,3,4):
+        sid = f"{pop}_{num}"
+        subject_data[sid] = {'X': [], 'Y': [], 'folds': [[], [], [], [], []]}
+        total_windows = 0
+
+        for task in (1, 2, 3, 4):
             csv_path = os.path.join(data_root, pop, str(task), f'{num}.csv')
             if not os.path.isfile(csv_path):
                 continue
-            try:
-                df = pd.read_csv(csv_path)
-            except Exception as e:
-                print(f'读取失败: {csv_path} | {e}')
+
+            df = safe_read_csv(csv_path)
+            if df is None or df.empty:
                 continue
 
             cols = [c for c in required_columns if c in df.columns]
@@ -97,27 +143,39 @@ def build_loso_subject_windows(data_root, subjects, required_columns, window_siz
             arr = df[cols].apply(pd.to_numeric, errors='coerce').fillna(0).values.astype('float32')
             if arr.shape[0] > arr.shape[1]:
                 arr = arr.T  # (C,T)
-            C, T = arr.shape
-            if T == 0:
+            if arr.shape[1] == 0:
                 continue
 
             lab = task_label[task]
             Xs, Ys = windowize_from_array(arr, lab, window_size, overlap)
-            X_all.extend(Xs)
-            Y_all.extend(Ys)
+            if not Xs:
+                continue
 
-        per_subj[(pop, num)] = {'X': X_all, 'Y': Y_all}
+            # 先窗口化，再按顺序均分为 5 份
+            bounds = split_into_k_parts(len(Xs), 5)
+            for k, (s, e) in enumerate(bounds):
+                for i in range(s, e):
+                    subject_data[sid]['folds'][k].append((Xs[i], Ys[i]))
 
-    return per_subj
+            subject_data[sid]['X'].extend([torch.from_numpy(x) for x in Xs])
+            subject_data[sid]['Y'].extend(Ys)
+            total_windows += len(Xs)
 
-# ------------------------ 构建 (pop, number) 列表 ------------------------
-def get_subject_list(dataset_type):
+        print(f"  ▶ {sid}: 窗口={total_windows} | 每份={[len(subject_data[sid]['folds'][k]) for k in range(5)]}")
+
+    return subject_data
+
+# ------------------------ 从磁盘扫描受试者列表 ------------------------
+def get_subject_list_from_disk(data_root, dataset_type):
     if dataset_type == 'MCI':
-        return [('MCI', i) for i in range(1, 26+1)]
+        return [('MCI', n) for n in scan_subject_numbers(data_root, 'MCI')]
     if dataset_type == 'HC':
-        return [('HC', i) for i in range(1, 42+1)]
+        return [('HC', n) for n in scan_subject_numbers(data_root, 'HC')]
     if dataset_type == 'ALL':
-        return [('MCI', i) for i in range(1, 26+1)] + [('HC', i) for i in range(1, 42+1)]
+        mci = scan_subject_numbers(data_root, 'MCI')
+        hc  = scan_subject_numbers(data_root, 'HC')
+        # 修复：删除多余的 ]（语法错误源头）
+        return [('MCI', n) for n in mci] + [('HC', n) for n in hc]
     raise ValueError(f'Unknown dataset type: {dataset_type}')
 
 # ------------------------ 画图 ------------------------
@@ -140,7 +198,7 @@ def plot_confusion_matrix(conf_mat, acc, total, side_txt, save_path):
     plt.xticks(ticks, [f'P{i}' for i in range(n)] + ['Precision'], rotation=45, fontsize=12)
     plt.yticks(ticks, [f'T{i}' for i in range(n)] + ['Recall'], fontsize=12)
 
-    thresh = M.max() / 2
+    thresh = M.max() / 2 if M.size > 0 else 0.5
     for i, j in np.ndindex(M.shape):
         v = M[i, j]
         if i < n and j < n:
@@ -149,7 +207,7 @@ def plot_confusion_matrix(conf_mat, acc, total, side_txt, save_path):
         else:
             s = f'{v*100:.2f}%'
         plt.text(j, i, s, ha='center', va='center',
-                 color='white' if v > thresh else 'black', fontsize=24)
+                 color='white' if v > thresh else 'black', fontsize=16)
 
     plt.gca().text(1.05, 0.05, side_txt, transform=plt.gca().transAxes,
                    va='top', ha='left', linespacing=1.3, fontsize=12,
@@ -180,14 +238,15 @@ def plot_roc_safe(y_true, y_score, title, save_path):
     plt.close()
 
 def plot_acc_curve(accs, labels, save_path):
-    plt.figure(figsize=(10, 4))
-    plt.bar(labels, accs)
+    plt.figure(figsize=(12, 6))
+    plt.bar(range(len(accs)), accs)
     plt.ylim(0, 1)
-    plt.xlabel('Fold (Subject)')
-    plt.ylabel('Accuracy')
-    plt.title('LOSO 各折准确率')
+    plt.xlabel('受试者ID')
+    plt.ylabel('准确率')
+    plt.title('各受试者准确率')
+    plt.xticks(range(len(labels)), labels, rotation=45, ha='right')
     for i, v in enumerate(accs):
-        plt.text(i, min(0.98, v + 0.02), f'{v:.3f}', ha='center', fontsize=9, rotation=90)
+        plt.text(i, min(v + 0.02, 0.98), f'{v:.3f}', ha='center', fontsize=8)
     plt.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, dpi=300)
@@ -232,7 +291,7 @@ def make_classifier(key, args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-root', type=str, default=os.path.join('DeepLearning','data_rml'))
-    parser.add_argument('--result-dir', type=str, default='Binary_LOSO_68')   # ← 改为 LOSO 目录
+    parser.add_argument('--result-dir', type=str, default='Binary_LOSO_68')
     parser.add_argument('--models', default='nb,svm,knn,dt,rf,ab', help="nb,svm,knn,dt,rf,ab 或 all")
     parser.add_argument('--datasets', default='MCI,HC,ALL', help="MCI,HC,ALL（逗号分隔）")
     parser.add_argument('--random_state', type=int, default=42)
@@ -246,7 +305,7 @@ def main():
     parser.add_argument('--svm_C', type=float, default=1.0)
     parser.add_argument('--svm_gamma', default='scale')
     parser.add_argument('--rf_estimators', type=int, default=200)
-    parser.add_argument('--ab_estimators', type=int, default=5000)
+    parser.add_argument('--ab_estimators', type=int, default=1000)  # 适度即可，过大很慢
     parser.add_argument('--ab_lr', type=float, default=0.5)
     parser.add_argument('--knn_max_k', type=int, default=20)
 
@@ -267,46 +326,53 @@ def main():
         if d not in all_datasets:
             raise ValueError(f'不支持的数据集: {d}（可选: {",".join(all_datasets)}）')
 
-    # 跑每个数据集 & 每个模型（LOSO）
+    # 跑每个数据集 & 每个模型
     for dtype in datasets_req:
-        subjects = get_subject_list(dtype)
+        subjects = get_subject_list_from_disk(args.data_root, dtype)
+        if not subjects:
+            print(f"[{dtype}] 未在磁盘找到任何受试者编号，请检查路径：{args.data_root}")
+            continue
 
-        # 每个受试者聚合窗口
-        subj_windows = build_loso_subject_windows(
+        print(f"[{dtype}] 扫描到受试者 {len(subjects)} 人，开始构建窗口 ...")
+        subject_data = build_subject_windows(
             args.data_root, subjects, REQUIRED_COLUMNS,
             args.window_size, args.overlap
         )
 
+        subject_ids = list(subject_data.keys())
+        usable = [sid for sid in subject_ids if len(subject_data[sid]['Y']) > 0]
+        print(f"[{dtype}] 可用受试者（至少1个窗口）: {len(usable)} / {len(subject_ids)}")
+
         for key in models_req:
-            res_dir = os.path.join(args.result_dir, f"{key}_{dtype}")
+            model_upper = key.upper()
+            # 目录结构：Binary_5K_dependent_68/<MODEL>/<DATASET>/
+            res_dir = os.path.join(args.result_dir, model_upper, dtype)
             os.makedirs(res_dir, exist_ok=True)
 
             total_conf = np.zeros((2, 2), int)
             y_t_all, y_p_all, y_pr_all = [], [], []
-            accs, fold_labels = [], []
+            accs, subject_labels = [], []
 
-            # 每个 (pop,num) 做一折
-            for (pop, num) in subjects:
-                te_pack = subj_windows.get((pop, num), {'X': [], 'Y': []})
-                Xte_list = te_pack['X']; Yte_list = te_pack['Y']
+            # 留一验证循环
+            for i, test_subject in enumerate(subject_ids):
+                Xte_list = subject_data[test_subject]['X']
+                Yte_list = subject_data[test_subject]['Y']
+
+                # 训练集：其他受试者
                 Xtr_list, Ytr_list = [], []
-
-                # 训练集：其余所有受试者
-                for (pop2, num2), pack in subj_windows.items():
-                    if (pop2, num2) == (pop, num):
+                for train_subject in subject_ids:
+                    if train_subject == test_subject:
                         continue
-                    Xtr_list += pack['X']
-                    Ytr_list += pack['Y']
+                    Xtr_list.extend(subject_data[train_subject]['X'])
+                    Ytr_list.extend(subject_data[train_subject]['Y'])
 
-                fold_name = f"{pop}_{num:02d}"
-                print(f"[{key.upper()}][{dtype}] LOSO {fold_name} | train={len(Ytr_list)} windows, test={len(Yte_list)} windows")
-
+                print(f"[{model_upper}][{dtype}] LOSO {i+1}/{len(subject_ids)}: 测试 {test_subject} | 训练 {len(Ytr_list)} 窗口, 测试 {len(Yte_list)} 窗口")
                 if not Xtr_list or not Xte_list:
-                    print(f"⚠️ LOSO {fold_name} 数据不足，跳过")
+                    print(f"  ⚠️ {test_subject} 数据不足（训练或测试为空），跳过")
                     continue
 
-                Xtr = np.vstack([x.numpy() for x in Xtr_list])
-                Xte = np.vstack([x.numpy() for x in Xte_list])
+                Xtr = np.vstack([x.numpy() if isinstance(x, torch.Tensor) else x for x in Xtr_list])
+                Xte = np.vstack([x.numpy() if isinstance(x, torch.Tensor) else x for x in Xte_list])
                 Ytr = np.array(Ytr_list); Yte = np.array(Yte_list)
 
                 scaler = StandardScaler().fit(Xtr)
@@ -314,12 +380,17 @@ def main():
 
                 clf = make_classifier(key, args)
                 if clf == 'KNN_CV':
-                    grid = {'n_neighbors': list(range(1, args.knn_max_k+1))}
-                    search = GridSearchCV(KNeighborsClassifier(), grid, cv=5, scoring='accuracy', n_jobs=args.n_jobs)
-                    search.fit(Xtr_s, Ytr)
-                    model = search.best_estimator_
-                    best_k = search.best_params_['n_neighbors']
-                    print(f"    → KNN 最佳 K={best_k}")
+                    min_class = min((Ytr == 0).sum(), (Ytr == 1).sum())
+                    n_splits = min(5, max(2, min_class))  # 保证可分
+                    if n_splits < 2:
+                        model = KNeighborsClassifier(n_neighbors=min(5, len(Ytr)))
+                    else:
+                        grid = {'n_neighbors': list(range(1, min(args.knn_max_k, len(Ytr)) + 1))}
+                        cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=args.random_state)
+                        search = GridSearchCV(KNeighborsClassifier(), grid, cv=cv, scoring='accuracy', n_jobs=args.n_jobs)
+                        search.fit(Xtr_s, Ytr)
+                        model = search.best_estimator_
+                        print(f"    → KNN 最佳 K={search.best_params_['n_neighbors']}（CV={n_splits}折）")
                 else:
                     model = clf.fit(Xtr_s, Ytr)
 
@@ -328,14 +399,14 @@ def main():
                     prob = model.predict_proba(Xte_s)[:, 1]
                 else:
                     if hasattr(model, 'decision_function'):
-                        scores = model.decision_function(Xte_s)
+                        scores = model.decision_function(Xte_s).astype(float)
                         mn, mx = scores.min(), scores.max()
                         prob = (scores - mn) / (mx - mn + 1e-12)
                     else:
-                        prob = np.full(len(Yte), 0.5)
+                        prob = np.full(len(Yte), 0.5, dtype=float)
 
                 acc = accuracy_score(Yte, pred)
-                rec = recall_score(y_true, y_pred, average='macro', zero_division=0)
+                rec = recall_score(Yte, pred, zero_division=0)
                 pre = precision_score(Yte, pred, zero_division=0)
                 f1s = f1_score(Yte, pred, zero_division=0)
                 try:
@@ -343,28 +414,29 @@ def main():
                 except Exception:
                     auc = 0.0
 
-                side_txt = (f"{dtype} {key.upper()} LOSO {fold_name}\n"
+                side_txt = (f"{dtype} {model_upper} {test_subject}\n"
                             f"Acc={acc:.4f}  Rec={rec:.4f}\n"
                             f"Pre={pre:.4f}  F1={f1s:.4f}\n"
                             f"AUC={auc:.4f}")
 
-                fold_dir = os.path.join(res_dir, f"fold_{fold_name}")
-                os.makedirs(fold_dir, exist_ok=True)
+                subject_dir = os.path.join(res_dir, f"subject_{test_subject}")
+                os.makedirs(subject_dir, exist_ok=True)
 
                 cm = confusion_matrix(Yte, pred, labels=[0, 1])
                 plot_confusion_matrix(cm, acc, len(Yte), side_txt,
-                                      os.path.join(fold_dir, "confusion.png"))
-                plot_roc_safe(Yte, prob, f"{dtype} {key.upper()} LOSO {fold_name} ROC",
-                              os.path.join(fold_dir, "roc.png"))
+                                      os.path.join(subject_dir, "confusion.png"))
+                plot_roc_safe(Yte, prob, f"{dtype} {model_upper} {test_subject} ROC",
+                              os.path.join(subject_dir, "roc.png"))
 
                 total_conf += cm
                 y_t_all += Yte.tolist()
                 y_p_all += pred.tolist()
                 y_pr_all += prob.tolist()
-                accs.append(acc); fold_labels.append(fold_name)
+                accs.append(acc)
+                subject_labels.append(test_subject)
 
             if accs:
-                plot_acc_curve(accs, fold_labels, os.path.join(res_dir, "accuracy_across_folds.png"))
+                plot_acc_curve(accs, subject_labels, os.path.join(res_dir, "accuracy_across_subjects.png"))
 
             if y_t_all:
                 oa = accuracy_score(y_t_all, y_p_all)
@@ -376,14 +448,28 @@ def main():
                 except Exception:
                     oauc = 0.0
 
-                otxt = (f"{dtype} {key.UPPER()} Overall\n"
+                otxt = (f"{dtype} {model_upper} Overall\n"
                         f"Acc={oa:.4f}  Rec={orc:.4f}\n"
                         f"Pre={opc:.4f}  F1={of1:.4f}\n"
                         f"AUC={oauc:.4f}")
                 plot_confusion_matrix(total_conf, oa, len(y_t_all), otxt,
                                       os.path.join(res_dir, "confusion_overall.png"))
-                plot_roc_safe(y_t_all, y_pr_all, f"{dtype} {key.upper()} Overall ROC",
+                plot_roc_safe(y_t_all, y_pr_all, f"{dtype} {model_upper} Overall ROC",
                               os.path.join(res_dir, "roc_overall.png"))
+
+                result_file = os.path.join(res_dir, "overall_results.txt")
+                with open(result_file, 'w') as f:
+                    f.write(f"Overall Results for {model_upper} on {dtype}\n")
+                    f.write("=" * 50 + "\n")
+                    f.write(f"Accuracy: {oa:.4f}\n")
+                    f.write(f"Recall: {orc:.4f}\n")
+                    f.write(f"Precision: {opc:.4f}\n")
+                    f.write(f"F1 Score: {of1:.4f}\n")
+                    f.write(f"AUC: {oauc:.4f}\n")
+                    f.write(f"Total Samples: {len(y_t_all)}\n")
+                    f.write(f"Total Subjects: {len(subject_ids)}\n")
+            else:
+                print(f"[{dtype}][{model_upper}] 没有可汇总的样本（可能所有受试者都被跳过）")
 
     print("All done.")
 
