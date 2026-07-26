@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-mix_rml.py：多模型可选（NB / SVM / KNN / DT / RF / AdaBoost）+ 非独立五折（先窗口再5折）
-适配新数据结构：DeepLearning/data_rml/<Population>/<task>/<number>.csv
-- Population ∈ {MCI, HC}
-- task ∈ {1,2,3,4}  (1→label=0, 2→label=1, 3/4→label=2)
-- number: MCI=1..26, HC=1..42（各自独立编号）
-
-运行示例：
-python mix_rml.py --data-root DeepLearning/data_rml --models all --datasets MCI,HC,ALL
-python mix_rml.py --data-root DeepLearning/data_rml --models svm,rf --datasets ALL
-"""
-
 import os, argparse
 import numpy as np
 import pandas as pd
