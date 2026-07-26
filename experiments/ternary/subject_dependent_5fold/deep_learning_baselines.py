@@ -1,30 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-MIX_2.py：四模型对比（MLP / LSTM / Transformer / CNN）非独立 5 折实验（三分类版）
------------------------------------------------------------------------
-· 标签规则（更新为三分类）：
-  stage: 1 → label=0；2 → label=1；3/4 → label=2
-
-· 其他保持：先窗口后五折；训练集再划10%验证；早停/达标即停；默认 epochs=5000
-· 指标与可视化更新为 3 类（宏平均 precision/recall/f1；多类 ROC-AUC（ovr））
-· 输出：
-  Triple_5K_dependent_68/MIX_2/<MODEL>/<GROUP>/fold_k/
-    - train_val_curves.png
-    - confusion.png（每折 3×3 主体 + 末行/末列为 Recall/Precision，总体 Acc 在右下）
-    - tsne.png
-  以及 overall 的 confusion_overall.png / tsne_overall.png
-
-  CUDA_VISIBLE_DEVICES=5,6,7 bash -c '
-  CUDA_VISIBLE_DEVICES=5 python triple_5K_dependent_68/MIX_2.py --model MLP --epochs 1000 &
-  CUDA_VISIBLE_DEVICES=6 python triple_5K_dependent_68/MIX_2.py --model LSTM --epochs 1000 &
-  CUDA_VISIBLE_DEVICES=7 python triple_5K_dependent_68/MIX_2.py --model Transformer --epochs 1000 &
-  CUDA_VISIBLE_DEVICES=5 python triple_5K_dependent_68/MIX_2.py --model CNN --epochs 1000 &
-  wait
-'
-"""
-
 import os
 import argparse
 import numpy as np
