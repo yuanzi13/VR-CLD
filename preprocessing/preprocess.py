@@ -64,39 +64,6 @@ def Interpolate_blink(df):
     
     return df
 
-#特征提取
-def feature_extraction(df, df_feature, bg_image_path, is_have_heartrate): #bg_image_path注视点的背景图路径
-
-    velocity_threshold = np.deg2rad(100)  # 100度/秒的角速度阈值转换为弧度/秒
-    clustering_threshold = 0.5 #聚类的阈值
-    distance_to_screen = 1.5 #眼睛距屏幕的距离，大致估计值，不准确
-    #fixations中包括该样本中的所有注视点的坐标和注视时长
-    fixations_position, fixations_times, fixations = fixation_calculate(df, velocity_threshold, clustering_threshold, distance_to_screen,bg_image_path)
-    #注视点个数
-    fixation_num = len(fixations)
-    #先对瞳孔直径信号进行滤波
-    df = wavelet_denoising(df)
-    #计算瞳孔平均大小，标准差，中位数，最大值，最小值，变化范围，变化率
-    pupil_mean, pupil_std, pupil_median, pupil_max, pupil_min, pupil_range, pupil_change_rate = pupil_calculate(df)
-    #计算眨眼次数，每次眨眼时长，总眨眼时长，眨眼频率，总眨眼占比，眨眼间隔
-    total_blinks, blink_durations, total_blink_duration, blink_rate, total_blinks_ratio, blink_intervals = calculate_blink_statistics(df)
-
-    #如果是有心率的数据集，可以计算心率特征
-    if (is_have_heartrate):
-        mean_heart_rate, std_heart_rate, median_heart_rate = calculate_mean_heart_rate(df)
-        new_row = pd.DataFrame({'fixation_num': [fixation_num], 'fixations_position': [fixations_position], 'fixations_times': [fixations_times], 
-                                'pupil_mean': [pupil_mean], 'pupil_std': [pupil_std], 'pupil_median': [pupil_median], 'pupil_max': pupil_max, 'pupil_min': [pupil_min], 'pupil_range': [pupil_range],'pupil_change_rate': [pupil_change_rate],
-                                'total_blinks': [total_blinks], 'blink_durations': [blink_durations], 'total_blink_duration': [total_blink_duration], 'blink_rate': [blink_rate], 'total_blinks_ratio': [total_blinks_ratio], 'blink_intervals': [blink_intervals],
-                                'mean_heart_rate': [mean_heart_rate], 'std_heart_rate': [std_heart_rate], 'median_heart_rate': [median_heart_rate]})
-    else:
-        new_row = pd.DataFrame({'fixation_num': [fixation_num], 'fixations_position': [fixations_position], 'fixations_times': [fixations_times], 
-                                'pupil_mean': [pupil_mean], 'pupil_std': [pupil_std], 'pupil_median': [pupil_median], 'pupil_max': pupil_max, 'pupil_min': [pupil_min], 'pupil_range': [pupil_range],'pupil_change_rate': [pupil_change_rate],
-                                'total_blinks': [total_blinks], 'blink_durations': [blink_durations], 'total_blink_duration': [total_blink_duration], 'blink_rate': [blink_rate], 'total_blinks_ratio': [total_blinks_ratio], 'blink_intervals': [blink_intervals]
-                                })
-    df_feature = pd.concat([df_feature, new_row], ignore_index=True)
-    #print(df_feature.to_string(index=False))
-    return df, df_feature
-
 def save_to_folder(df, i, is_have_heartrate, label, file, index, type):
     df = df.copy()
     folder_name = ['Data', 'Feature']
