@@ -1,0 +1,90 @@
+# VR-CLD TCN Model Configuration
+
+model:
+  name: TCN
+  input_channels: 17
+  input_length: 240
+  window_size: 2  # seconds
+
+  temporal_blocks: 4
+  kernel_size: 3
+  dilation_base: 2
+  dilation_factors:
+    - 1
+    - 2
+    - 4
+    - 8
+
+  channels:
+    - 64
+    - 64
+    - 128
+    - 128
+
+  activation: ReLU
+  dropout: 0.2
+
+  classifier:
+    type: GlobalAvgPool1d + FullyConnected
+
+
+training:
+  optimizer: Adam
+  learning_rate: 0.001
+  batch_size: 256
+  max_epochs: 500
+
+  early_stopping:
+    enabled: true
+    patience: 80
+
+  random_seed: 42
+
+  class_weights:
+    binary:
+      - 1.0
+      - 1.0
+    ternary:
+      - 1.0
+      - 1.0
+      - 0.5
+
+
+data:
+  sampling_frequency: 120
+  signal_channels: 17
+  preprocessing:
+    missing_signal_handling: forward_fill
+    normalization: z-score
+    standardization_scope: training_set_only
+
+  labels:
+    binary:
+      LCL:
+        tests:
+          - A
+          - B
+      HCL:
+        tests:
+          - C
+          - D
+
+    ternary:
+      LCL:
+        tests:
+          - A
+      MCL:
+        tests:
+          - B
+      HCL:
+        tests:
+          - C
+          - D
+
+
+environment:
+  python: "3.8.20"
+  pytorch: "2.4.1"
+  cuda: "11.8"
+  gpu: "NVIDIA GeForce RTX 3090"
+  operating_system: Linux
