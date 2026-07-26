@@ -1,14 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-复现三个 LOSO TCN 模型的 t-SNE 图：
-1) subj_MCI_06/best.pth (测试集: MCI_06)
-2) subj_HC_06/best.pth (测试集: HC_06)  
-3) subj_ALL_06/best.pth (测试集: MCI_06+HC_06)
-
-仅绘制指定测试集的t-SNE图
-"""
-
 import os
 import numpy as np
 import pandas as pd
