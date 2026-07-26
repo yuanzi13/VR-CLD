@@ -1,21 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-最好结果的指令：
-CUDA_VISIBLE_DEVICES=3 python Binary_5K_dependent_68/TCN.py   --data-root data_rml   --result-dir Binary_5K_dependent_68/TCN_sne_2  --datasets MCI,HC,ALL  --window-size 240 --overlap 0.0  --epochs 500 --batch-size 256  --lr 1e-3 --weight-decay 1e-4  --patience 80 --min-delta 0.0 --val-ratio 0.1  --kernel-size 3 --dropout 0.2 --channels 64,64,128,128  --gpu-id 0 
-tcn.py：TCN 时序卷积模型（PyTorch）二分类 + 非独立 5 折 + t-SNE 可视化
-输出目录结构：
-  Binary_5K_dependent_68/tcn_2/tcn_<DATASET>/fold_xx/...
-  - confusion.png / roc.png / curve_loss_acc.png / tsne.png
-  - best.pth / train_val_history.csv
-Overall:
-  - confusion_overall.png / roc_overall.png / accuracy_across_folds.png / tsne_overall.png
-
-新增：
-1) overall 合并 ROC（MCI, HC, ALL）保存在 --result-dir 下： roc_MCI_HC_ALL_combined.png
-2) t-SNE 图中计算并显示类间质心距离（右侧文本框）
-3) t-SNE 图例中标签 0 -> LCL, 1 -> HCL
-"""
 import os, argparse, sys
 import numpy as np
 import pandas as pd
