@@ -1,26 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-mix.py：经典机器学习多模型（NB / SVM / KNN / DT / RF / AdaBoost）+ TCN（PyTorch）+ 非独立五折
-—— 与 MIX_2.py 保持一致的【数据输入 / 标签规则 / 数据集划分方法（先窗口化→再均分5折）】
-
-目录结构（与 MIX_2.py 一致）：
-  data_root/<Population>/<stage>/<number>.csv
-    - Population: MCI 或 HC
-    - stage: '1'/'2'→label=0；'3'/'4'→label=1（本脚本二分类）
-    - number: MCI=1..26，HC=1..42（各自独立编号）
-
-输出：
-  Binary_5K_dependent_68/<model>/<model_dataset>/fold_xx/...
-    - confusion.png / confusion_overall.png
-    - roc.png / roc_overall.png
-    - accuracy_across_folds.png
-    - （TCN 还会额外保存 best.pt 与 train_val_curves.png）
-
-快速启动（把不同模型分配到 4/5/6/7 卡上，并跑所有数据集）：
-  python mix.py --data-root DeepLearning/data_rml --launch4567
-"""
-
 import os, sys, argparse, subprocess
 import numpy as np
 import pandas as pd
