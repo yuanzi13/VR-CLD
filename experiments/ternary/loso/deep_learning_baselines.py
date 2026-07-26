@@ -1,24 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-MIX_2.py：四模型对比（MLP / LSTM / Transformer / CNN）三分类 + LOSO
------------------------------------------------------------------------
-· 数据结构：
-  data_root/<Population>/<stage>/<number>.csv
-  - Population: MCI 或 HC
-  - stage: 1 -> label=0；2 -> label=1；3/4 -> label=2
-  - number: MCI=1..26，HC=1..42
-
-· 三组：MCI / HC / ALL
-· 训练：每折将训练集再划 10% 验证；输出训练曲线
-· 可视化：
-  - 混淆矩阵（旁侧标注 Accuracy / Recall / Precision / F1 / AUC）
-  - ROC（多分类 OVR：三条单类曲线 + micro + macro）
-  - t-SNE（提取模型特征后降维）
-· 输出目录：<result-dir>/<MODEL>/<GROUP>/fold_k/ 与 overall 文件
-"""
-
 import os
 import argparse
 import numpy as np
