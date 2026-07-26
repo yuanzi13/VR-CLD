@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-tcn.py：TCN 时序卷积（PyTorch）三分类 + 非独立 5 折 + t-SNE
-- 标签映射：task_label = {1:0, 2:1, 3:2, 4:2}
-- 指标与图形：混淆矩阵（含P/R）、多分类ROC（OvR）、各折Acc柱状图、训练/验证Loss&Acc曲线、t-SNE（每折+Overall）
-- 早停：基于验证集 val_acc（可改为 val_loss），保存 fold 最优模型到 fold_xx/best.pth
-
-目录结构：
-  triple_5K_dependent_68/tcn/tcn_<DATASET>/fold_xx/...
-
-示例：
-  python tcn.py --data-root DeepLearning/data_rml --datasets MCI,HC,ALL --epochs 50 --gpu-id 0
-"""
 import datetime
 import json
 from pathlib import Path
