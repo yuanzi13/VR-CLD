@@ -1,6 +1,6 @@
 # VR-CLD
-A cloud-based virtual reality (VR) cognitive assessment system integrating 
-eye-tracking signals and deep learning models for mild cognitive impairment (MCI) detection.
+A virtual reality-based cognitive load classification framework for older adults
+using eye-tracking signals and deep learning models.
 
 Due to ethical restrictions, raw participant data cannot be publicly released. 
 A synthetic example dataset is provided to demonstrate the data format and 
@@ -29,3 +29,23 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Repository Structure
+
+- `data/synthetic/`: synthetic example datasets
+- `preprocessing/`: preprocessing scripts
+- `experiments/binary/`: binary classification experiments
+- `experiments/ternary/`: ternary classification experiments
+- `config.yaml`: model, training, and preprocessing parameters
+
+## Environment
+
+Python 3.8.20  
+PyTorch 2.4.1  
+CUDA 11.8
+
+## Example Usage
+
+```bash
+python preprocessing/preprocess.py
+python experiments/binary/subject_dependent_5fold/tcn.py
