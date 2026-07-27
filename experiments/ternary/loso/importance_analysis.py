@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-TCN 三分类 + LOSO + t-SNE 可视化（含：比较 ROC（仅 LCL vs HCL） & t-SNE 类间距离）
-输出目录：triple_LOSO_68/TCN3/<MCI|HC|ALL>/
-每折：loss/acc曲线、best.pth、混淆矩阵/ROC、t-SNE、特征重要性
-Overall：混淆矩阵/ROC、t-SNE、LOSO平均特征重要性
-"""
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -421,7 +413,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
         model.eval()
         v_total, v_correct, v_loss_sum = 0, 0, 0.0
         with torch.no_grad():
-            for xb, yb in test_loader:
+            for xb, yb in val_loader:
                 xb, yb = xb.to(device), yb.to(device)
                 logits = model(xb)
                 loss = crit(logits, yb)
@@ -460,7 +452,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
     y_true, y_pred, y_prob = [], [], []
     feats_collect, labels_collect = [], []
     with torch.no_grad():
-        for xb, yb in test_loader:
+        for xb, yb in val_loader:
             xb = xb.to(device)
             logits = model(xb)
             prob = torch.softmax(logits, dim=1).cpu().numpy()
