@@ -39,10 +39,10 @@ REQUIRED_COLUMNS = [
 
 # ------------------------ 标签映射（三分类） ------------------------
 STAGE_LABEL = [('1', 0), ('2', 1), ('3', 2), ('4', 2)]
-CLASS_NAMES = {0: 'LCL', 1: 'HCL', 2: 'MCL'}
+CLASS_NAMES = {0: 'LCL', 1: 'MCL', 2: 'HCL'}
 
 # ------------------------ Grad-CAM 特征重要性 ------------------------
-def gradcam_feature_importance(model, device, test_loader, feature_names, out_dir):
+def gradient-based input attribution(model, device, test_loader, feature_names, out_dir):
     model.eval()
     model.to(device)
     feat_importance = np.zeros(len(feature_names))
@@ -275,7 +275,7 @@ def plot_tsne(feats, labels, save_path, title=None, dpi=300,
     emb = tsne.fit_transform(Z)
 
     colors = {0: '#1f77b4', 1: '#2ca02c', 2: '#d62728'}
-    name_map = {0: 'LCL', 1: 'HCL', 2: 'MCL'}
+    name_map = {0: 'LCL', 1: 'MCL', 2: 'HCL'}
     plt.figure(figsize=(6.8, 5.2))
     ax = plt.gca()
     centroids = {}
@@ -467,7 +467,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
     labels_arr = np.array(labels_collect) if labels_collect else None
 
     # ===================== 特征重要性 =====================
-    fold_feat_score = gradcam_feature_importance(model, device, test_loader, REQUIRED_COLUMNS, fold_dir)
+    fold_feat_score = gradient-based input attribution(model, device, test_loader, REQUIRED_COLUMNS, fold_dir)
     return np.array(y_true), np.array(y_pred), np.array(y_prob), feats_arr, labels_arr, fold_feat_score
 
 # ------------------------ 比较 ROC ------------------------
@@ -512,11 +512,11 @@ def main():
     parser.add_argument('--datasets', default='MCI,HC,ALL', help="MCI,HC,ALL（逗号分隔）")
     parser.add_argument('--window-size', type=int, default=240)
     parser.add_argument('--overlap', type=float, default=0.0)
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--weight-decay', type=float, default=1e-4)
-    parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--patience', type=int, default=80)
     parser.add_argument('--min-delta', type=float, default=0.0)
     parser.add_argument('--kernel-size', type=int, default=3)
     parser.add_argument('--dropout', type=float, default=0.2)
