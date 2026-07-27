@@ -91,60 +91,31 @@ def scan_subject_numbers(data_root, pop):
         nums |= list_numeric_stems(d)
     return sorted(nums)
 
-# ------------------------ 构建每个受试者的窗口数据（含5份信息） ------------------------
-def build_subject_windows(data_root, subjects, required_columns, window_size, overlap):
+def merge_subject_folds(subject_data, usable_subjects, n_folds=5):
     """
-    返回：{sid: {'X': list[Tensor(1,-1)], 'Y': list[int], 'folds': [list[(np.ndarray,label)]*5]}}
+    将每名受试者已经划分好的5份窗口，按相同fold编号汇总。
+
+    最终：
+        folds[0] = 所有受试者各自第1份窗口
+        folds[1] = 所有受试者各自第2份窗口
+        ...
     """
-    subject_data = {}
-    task_label = {1: 0, 2: 0, 3: 1, 4: 1}
+    folds = [
+        {'X': [], 'Y': []}
+        for _ in range(n_folds)
+    ]
 
-    for (pop, num) in subjects:
-        sid = f"{pop}_{num}"
-        subject_data[sid] = {'X': [], 'Y': [], 'folds': [[], [], [], [], []]}
-        total_windows = 0
+    for sid in usable_subjects:
+        subject_folds = subject_data[sid]['folds']
 
-        for task in (1, 2, 3, 4):
-            csv_path = os.path.join(data_root, pop, str(task), f'{num}.csv')
-            if not os.path.isfile(csv_path):
-                continue
+        for k in range(n_folds):
+            for x, y in subject_folds[k]:
+                folds[k]['X'].append(x)
+                folds[k]['Y'].append(y)
 
-            df = safe_read_csv(csv_path)
-            if df is None or df.empty:
-                continue
+    return folds
 
-            cols = [c for c in required_columns if c in df.columns]
-            if not cols:
-                print(f'⚠️ 无 REQ 列：{csv_path}')
-                continue
-            if len(cols) < len(required_columns):
-                miss = list(set(required_columns) - set(cols))
-                print(f'⚠️ 缺失列 {miss} | {csv_path}')
 
-            arr = df[cols].apply(pd.to_numeric, errors='coerce').fillna(0).values.astype('float32')
-            if arr.shape[0] > arr.shape[1]:
-                arr = arr.T  # (C,T)
-            if arr.shape[1] == 0:
-                continue
-
-            lab = task_label[task]
-            Xs, Ys = windowize_from_array(arr, lab, window_size, overlap)
-            if not Xs:
-                continue
-
-            # 先窗口化，再按顺序均分为 5 份
-            bounds = split_into_k_parts(len(Xs), 5)
-            for k, (s, e) in enumerate(bounds):
-                for i in range(s, e):
-                    subject_data[sid]['folds'][k].append((Xs[i], Ys[i]))
-
-            subject_data[sid]['X'].extend([torch.from_numpy(x) for x in Xs])
-            subject_data[sid]['Y'].extend(Ys)
-            total_windows += len(Xs)
-
-        print(f"  ▶ {sid}: 窗口={total_windows} | 每份={[len(subject_data[sid]['folds'][k]) for k in range(5)]}")
-
-    return subject_data
 
 # ------------------------ 从磁盘扫描受试者列表 ------------------------
 def get_subject_list_from_disk(data_root, dataset_type):
@@ -219,20 +190,35 @@ def plot_roc_safe(y_true, y_score, title, save_path):
     plt.close()
 
 def plot_acc_curve(accs, labels, save_path):
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(8, 4))
     plt.bar(range(len(accs)), accs)
     plt.ylim(0, 1)
-    plt.xlabel('受试者ID')
-    plt.ylabel('准确率')
-    plt.title('各受试者准确率')
-    plt.xticks(range(len(labels)), labels, rotation=45, ha='right')
-    for i, v in enumerate(accs):
-        plt.text(i, min(v + 0.02, 0.98), f'{v:.3f}', ha='center', fontsize=8)
+
+    plt.xlabel('Fold')
+    plt.ylabel('Accuracy')
+    plt.title('Accuracy across 5 folds')
+
+    plt.xticks(
+        range(len(labels)),
+        labels
+    )
+
+    for i, value in enumerate(accs):
+        plt.text(
+            i,
+            min(value + 0.02, 0.98),
+            f'{value:.3f}',
+            ha='center',
+            fontsize=9
+        )
+
     plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    os.makedirs(
+        os.path.dirname(save_path),
+        exist_ok=True
+    )
     plt.savefig(save_path, dpi=300)
     plt.close()
-
 # ------------------------ 构建分类器 ------------------------
 def make_classifier(key, args):
     k = key.lower()
@@ -272,7 +258,7 @@ def make_classifier(key, args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-root', type=str, default=os.path.join('DeepLearning','data_rml'))
-    parser.add_argument('--result-dir', type=str, default='Binary_LOSO_68')
+    parser.add_argument('--result-dir', type=str, default='Binary_5K_dependent_68')
     parser.add_argument('--models', default='nb,svm,knn,dt,rf,ab', help="nb,svm,knn,dt,rf,ab 或 all")
     parser.add_argument('--datasets', default='MCI,HC,ALL', help="MCI,HC,ALL（逗号分隔）")
     parser.add_argument('--random_state', type=int, default=42)
@@ -320,137 +306,447 @@ def main():
             args.window_size, args.overlap
         )
 
-        subject_ids = list(subject_data.keys())
-        usable = [sid for sid in subject_ids if len(subject_data[sid]['Y']) > 0]
-        print(f"[{dtype}] 可用受试者（至少1个窗口）: {len(usable)} / {len(subject_ids)}")
+subject_ids = list(subject_data.keys())
 
-        for key in models_req:
-            model_upper = key.upper()
-            # 目录结构：Binary_5K_dependent_68/<MODEL>/<DATASET>/
-            res_dir = os.path.join(args.result_dir, model_upper, dtype)
-            os.makedirs(res_dir, exist_ok=True)
+usable = [
+    sid
+    for sid in subject_ids
+    if len(subject_data[sid]['Y']) > 0
+]
 
-            total_conf = np.zeros((2, 2), int)
-            y_t_all, y_p_all, y_pr_all = [], [], []
-            accs, subject_labels = [], []
+print(
+    f"[{dtype}] 可用受试者："
+    f"{len(usable)} / {len(subject_ids)}"
+)
 
-            # 留一验证循环
-            for i, test_subject in enumerate(subject_ids):
-                Xte_list = subject_data[test_subject]['X']
-                Yte_list = subject_data[test_subject]['Y']
+if not usable:
+    print(f"[{dtype}] 没有可用受试者，跳过")
+    continue
 
-                # 训练集：其他受试者
-                Xtr_list, Ytr_list = [], []
-                for train_subject in subject_ids:
-                    if train_subject == test_subject:
-                        continue
-                    Xtr_list.extend(subject_data[train_subject]['X'])
-                    Ytr_list.extend(subject_data[train_subject]['Y'])
+# 将各受试者的第1～5份窗口分别汇总
+folds = merge_subject_folds(
+    subject_data,
+    usable,
+    n_folds=5
+)
 
-                print(f"[{model_upper}][{dtype}] LOSO {i+1}/{len(subject_ids)}: 测试 {test_subject} | 训练 {len(Ytr_list)} 窗口, 测试 {len(Yte_list)} 窗口")
-                if not Xtr_list or not Xte_list:
-                    print(f"  ⚠️ {test_subject} 数据不足（训练或测试为空），跳过")
-                    continue
+# 检查各折样本与标签分布
+for k in range(5):
+    fold_y = np.asarray(folds[k]['Y'])
 
-                Xtr = np.vstack([x.numpy() if isinstance(x, torch.Tensor) else x for x in Xtr_list])
-                Xte = np.vstack([x.numpy() if isinstance(x, torch.Tensor) else x for x in Xte_list])
-                Ytr = np.array(Ytr_list); Yte = np.array(Yte_list)
+    if fold_y.size == 0:
+        print(
+            f"[DEBUG][{dtype}] "
+            f"Fold {k + 1}: 空折"
+        )
+    else:
+        labels, counts = np.unique(
+            fold_y,
+            return_counts=True
+        )
 
-                scaler = StandardScaler().fit(Xtr)
-                Xtr_s = scaler.transform(Xtr); Xte_s = scaler.transform(Xte)
+        distribution = dict(
+            zip(labels.tolist(), counts.tolist())
+        )
 
-                clf = make_classifier(key, args)
-                if clf == 'KNN_CV':
-                    min_class = min((Ytr == 0).sum(), (Ytr == 1).sum())
-                    n_splits = min(5, max(2, min_class))  # 保证可分
-                    if n_splits < 2:
-                        model = KNeighborsClassifier(n_neighbors=min(5, len(Ytr)))
-                    else:
-                        grid = {'n_neighbors': list(range(1, min(args.knn_max_k, len(Ytr)) + 1))}
-                        cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=args.random_state)
-                        search = GridSearchCV(KNeighborsClassifier(), grid, cv=cv, scoring='accuracy', n_jobs=args.n_jobs)
-                        search.fit(Xtr_s, Ytr)
-                        model = search.best_estimator_
-                        print(f"    → KNN 最佳 K={search.best_params_['n_neighbors']}（CV={n_splits}折）")
-                else:
-                    model = clf.fit(Xtr_s, Ytr)
+        print(
+            f"[DEBUG][{dtype}] "
+            f"Fold {k + 1}: "
+            f"窗口={len(fold_y)}, "
+            f"标签={distribution}"
+        )
 
-                pred = model.predict(Xte_s)
-                if hasattr(model, 'predict_proba'):
-                    prob = model.predict_proba(Xte_s)[:, 1]
-                else:
-                    if hasattr(model, 'decision_function'):
-                        scores = model.decision_function(Xte_s).astype(float)
-                        mn, mx = scores.min(), scores.max()
-                        prob = (scores - mn) / (mx - mn + 1e-12)
-                    else:
-                        prob = np.full(len(Yte), 0.5, dtype=float)
+for key in models_req:
+    model_upper = key.upper()
 
-                acc = accuracy_score(Yte, pred)
-                rec = recall_score(Yte, pred, zero_division=0)
-                pre = precision_score(Yte, pred, zero_division=0)
-                f1s = f1_score(Yte, pred, zero_division=0)
-                try:
-                    auc = roc_auc_score(Yte, prob)
-                except Exception:
-                    auc = 0.0
+    res_dir = os.path.join(
+        args.result_dir,
+        model_upper,
+        dtype
+    )
+    os.makedirs(res_dir, exist_ok=True)
 
-                side_txt = (f"{dtype} {model_upper} {test_subject}\n"
-                            f"Acc={acc:.4f}  Rec={rec:.4f}\n"
-                            f"Pre={pre:.4f}  F1={f1s:.4f}\n"
-                            f"AUC={auc:.4f}")
+    total_conf = np.zeros((2, 2), dtype=int)
 
-                subject_dir = os.path.join(res_dir, f"subject_{test_subject}")
-                os.makedirs(subject_dir, exist_ok=True)
+    y_t_all = []
+    y_p_all = []
+    y_pr_all = []
 
-                cm = confusion_matrix(Yte, pred, labels=[0, 1])
-                plot_confusion_matrix(cm, acc, len(Yte), side_txt,
-                                      os.path.join(subject_dir, "confusion.png"))
-                plot_roc_safe(Yte, prob, f"{dtype} {model_upper} {test_subject} ROC",
-                              os.path.join(subject_dir, "roc.png"))
+    accs = []
+    fold_labels = []
 
-                total_conf += cm
-                y_t_all += Yte.tolist()
-                y_p_all += pred.tolist()
-                y_pr_all += prob.tolist()
-                accs.append(acc)
-                subject_labels.append(test_subject)
+    # =========================
+    # subject-dependent 5-fold
+    # =========================
+    for k in range(5):
+        # 第k折作为测试集
+        Xte_list = folds[k]['X']
+        Yte_list = folds[k]['Y']
 
-            if accs:
-                plot_acc_curve(accs, subject_labels, os.path.join(res_dir, "accuracy_across_subjects.png"))
+        # 其余4折作为训练集
+        Xtr_list = []
+        Ytr_list = []
 
-            if y_t_all:
-                oa = accuracy_score(y_t_all, y_p_all)
-                orc = recall_score(y_t_all, y_p_all, zero_division=0)
-                opc = precision_score(y_t_all, y_p_all, zero_division=0)
-                of1 = f1_score(y_t_all, y_p_all, zero_division=0)
-                try:
-                    oauc = roc_auc_score(y_t_all, y_pr_all)
-                except Exception:
-                    oauc = 0.0
+        for j in range(5):
+            if j == k:
+                continue
 
-                otxt = (f"{dtype} {model_upper} Overall\n"
-                        f"Acc={oa:.4f}  Rec={orc:.4f}\n"
-                        f"Pre={opc:.4f}  F1={of1:.4f}\n"
-                        f"AUC={oauc:.4f}")
-                plot_confusion_matrix(total_conf, oa, len(y_t_all), otxt,
-                                      os.path.join(res_dir, "confusion_overall.png"))
-                plot_roc_safe(y_t_all, y_pr_all, f"{dtype} {model_upper} Overall ROC",
-                              os.path.join(res_dir, "roc_overall.png"))
+            Xtr_list.extend(folds[j]['X'])
+            Ytr_list.extend(folds[j]['Y'])
 
-                result_file = os.path.join(res_dir, "overall_results.txt")
-                with open(result_file, 'w') as f:
-                    f.write(f"Overall Results for {model_upper} on {dtype}\n")
-                    f.write("=" * 50 + "\n")
-                    f.write(f"Accuracy: {oa:.4f}\n")
-                    f.write(f"Recall: {orc:.4f}\n")
-                    f.write(f"Precision: {opc:.4f}\n")
-                    f.write(f"F1 Score: {of1:.4f}\n")
-                    f.write(f"AUC: {oauc:.4f}\n")
-                    f.write(f"Total Samples: {len(y_t_all)}\n")
-                    f.write(f"Total Subjects: {len(subject_ids)}\n")
+        print(
+            f"[{model_upper}][{dtype}] "
+            f"Fold {k + 1}/5 | "
+            f"train={len(Ytr_list)} windows, "
+            f"test={len(Yte_list)} windows"
+        )
+
+        if not Xtr_list or not Xte_list:
+            print(
+                f"⚠️ Fold {k + 1} "
+                f"训练集或测试集为空，跳过"
+            )
+            continue
+
+        # folds中保存的是np.ndarray
+        Xtr = np.vstack(Xtr_list)
+        Xte = np.vstack(Xte_list)
+
+        Ytr = np.asarray(
+            Ytr_list,
+            dtype=np.int64
+        )
+        Yte = np.asarray(
+            Yte_list,
+            dtype=np.int64
+        )
+
+        # 每个外层fold只用训练折拟合Scaler
+        scaler = StandardScaler()
+        scaler.fit(Xtr)
+
+        Xtr_s = scaler.transform(Xtr)
+        Xte_s = scaler.transform(Xte)
+
+        # ---------------------
+        # 建立和训练分类器
+        # ---------------------
+        clf = make_classifier(key, args)
+
+        if isinstance(clf, str) and clf == 'KNN_CV':
+            min_class_count = min(
+                int((Ytr == 0).sum()),
+                int((Ytr == 1).sum())
+            )
+
+            n_splits = min(
+                5,
+                min_class_count
+            )
+
+            if n_splits < 2:
+                best_k = min(
+                    5,
+                    len(Ytr)
+                )
+
+                model = KNeighborsClassifier(
+                    n_neighbors=best_k
+                )
+                model.fit(Xtr_s, Ytr)
+
+                print(
+                    f"    → KNN使用固定K={best_k}"
+                )
+
             else:
-                print(f"[{dtype}][{model_upper}] 没有可汇总的样本（可能所有受试者都被跳过）")
+                max_k = min(
+                    args.knn_max_k,
+                    len(Ytr)
+                )
+
+                grid = {
+                    'n_neighbors': list(
+                        range(1, max_k + 1)
+                    )
+                }
+
+                cv = StratifiedKFold(
+                    n_splits=n_splits,
+                    shuffle=True,
+                    random_state=args.random_state
+                )
+
+                search = GridSearchCV(
+                    estimator=KNeighborsClassifier(),
+                    param_grid=grid,
+                    cv=cv,
+                    scoring='accuracy',
+                    n_jobs=args.n_jobs
+                )
+
+                search.fit(Xtr_s, Ytr)
+                model = search.best_estimator_
+
+                print(
+                    f"    → KNN最佳K="
+                    f"{search.best_params_['n_neighbors']} "
+                    f"（内部CV={n_splits}折）"
+                )
+
+        else:
+            model = clf
+            model.fit(Xtr_s, Ytr)
+
+        # ---------------------
+        # 外层测试折预测
+        # ---------------------
+        pred = model.predict(Xte_s)
+
+        if hasattr(model, 'predict_proba'):
+            prob = model.predict_proba(
+                Xte_s
+            )[:, 1]
+
+        elif hasattr(model, 'decision_function'):
+            scores = model.decision_function(
+                Xte_s
+            ).astype(float)
+
+            score_min = scores.min()
+            score_max = scores.max()
+
+            prob = (
+                scores - score_min
+            ) / (
+                score_max - score_min + 1e-12
+            )
+
+        else:
+            prob = np.full(
+                len(Yte),
+                0.5,
+                dtype=float
+            )
+
+        # ---------------------
+        # 本折指标
+        # ---------------------
+        acc = accuracy_score(
+            Yte,
+            pred
+        )
+
+        rec = recall_score(
+            Yte,
+            pred,
+            average='binary',
+            pos_label=1,
+            zero_division=0
+        )
+
+        pre = precision_score(
+            Yte,
+            pred,
+            average='binary',
+            pos_label=1,
+            zero_division=0
+        )
+
+        f1s = f1_score(
+            Yte,
+            pred,
+            average='binary',
+            pos_label=1,
+            zero_division=0
+        )
+
+        try:
+            auc = roc_auc_score(
+                Yte,
+                prob
+            )
+        except ValueError:
+            auc = np.nan
+
+        side_txt = (
+            f"{dtype} {model_upper} "
+            f"Fold {k + 1}\n"
+            f"Acc={acc:.4f}  "
+            f"Rec={rec:.4f}\n"
+            f"Pre={pre:.4f}  "
+            f"F1={f1s:.4f}\n"
+            f"AUC={auc:.4f}"
+        )
+
+        fold_dir = os.path.join(
+            res_dir,
+            f"fold_{k + 1:02d}"
+        )
+        os.makedirs(fold_dir, exist_ok=True)
+
+        cm = confusion_matrix(
+            Yte,
+            pred,
+            labels=[0, 1]
+        )
+
+        plot_confusion_matrix(
+            cm,
+            acc,
+            len(Yte),
+            side_txt,
+            os.path.join(
+                fold_dir,
+                'confusion.png'
+            )
+        )
+
+        plot_roc_safe(
+            Yte,
+            prob,
+            (
+                f"{dtype} {model_upper} "
+                f"Fold {k + 1} ROC"
+            ),
+            os.path.join(
+                fold_dir,
+                'roc.png'
+            )
+        )
+
+        # 汇总五折结果
+        total_conf += cm
+
+        y_t_all.extend(
+            Yte.tolist()
+        )
+        y_p_all.extend(
+            pred.tolist()
+        )
+        y_pr_all.extend(
+            prob.tolist()
+        )
+
+        accs.append(acc)
+        fold_labels.append(
+            f"Fold {k + 1}"
+        )
+
+    # 五折准确率
+    if accs:
+        plot_acc_curve(
+            accs,
+            fold_labels,
+            os.path.join(
+                res_dir,
+                'accuracy_across_folds.png'
+            )
+        )
+
+    # =====================
+    # 汇总五折测试窗口指标
+    # =====================
+    if y_t_all:
+        oa = accuracy_score(
+            y_t_all,
+            y_p_all
+        )
+
+        orc = recall_score(
+            y_t_all,
+            y_p_all,
+            average='binary',
+            pos_label=1,
+            zero_division=0
+        )
+
+        opc = precision_score(
+            y_t_all,
+            y_p_all,
+            average='binary',
+            pos_label=1,
+            zero_division=0
+        )
+
+        of1 = f1_score(
+            y_t_all,
+            y_p_all,
+            average='binary',
+            pos_label=1,
+            zero_division=0
+        )
+
+        try:
+            oauc = roc_auc_score(
+                y_t_all,
+                y_pr_all
+            )
+        except ValueError:
+            oauc = np.nan
+
+        otxt = (
+            f"{dtype} {model_upper} "
+            f"5-Fold Overall\n"
+            f"Acc={oa:.4f}  "
+            f"Rec={orc:.4f}\n"
+            f"Pre={opc:.4f}  "
+            f"F1={of1:.4f}\n"
+            f"AUC={oauc:.4f}"
+        )
+
+        plot_confusion_matrix(
+            total_conf,
+            oa,
+            len(y_t_all),
+            otxt,
+            os.path.join(
+                res_dir,
+                'confusion_overall.png'
+            )
+        )
+
+        plot_roc_safe(
+            y_t_all,
+            y_pr_all,
+            (
+                f"{dtype} {model_upper} "
+                f"5-Fold Overall ROC"
+            ),
+            os.path.join(
+                res_dir,
+                'roc_overall.png'
+            )
+        )
+
+        result_file = os.path.join(
+            res_dir,
+            'overall_results.txt'
+        )
+
+        with open(
+            result_file,
+            'w',
+            encoding='utf-8'
+        ) as file:
+            file.write(
+                f"5-Fold Overall Results for "
+                f"{model_upper} on {dtype}\n"
+            )
+            file.write("=" * 50 + "\n")
+            file.write(f"Accuracy: {oa:.4f}\n")
+            file.write(f"Recall: {orc:.4f}\n")
+            file.write(f"Precision: {opc:.4f}\n")
+            file.write(f"F1 Score: {of1:.4f}\n")
+            file.write(f"AUC: {oauc:.4f}\n")
+            file.write(
+                f"Total Test Windows: "
+                f"{len(y_t_all)}\n"
+            )
+            file.write(
+                f"Completed Folds: "
+                f"{len(accs)}\n"
+            )
 
     print("All done.")
 
