@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-TCN 三分类 + LOSO + t-SNE 可视化（含：比较 ROC（仅 LCL vs HCL） & t-SNE 类间距离）
-输出目录：triple_LOSO_68/TCN3/<MCI|HC|ALL>/
-每折：loss/acc曲线、best.pth、混淆矩阵/ROC、t-SNE
-Overall：混淆矩阵/ROC、t-SNE
-"""
 import os
 import numpy as np
 import matplotlib.pyplot as plt
