@@ -42,8 +42,8 @@ REQUIRED_COLUMNS = [
 
 # ------------------------ 标签映射（二分类） ------------------------
 STAGE_LABEL = [('1', 0), ('2', 0), ('3', 1), ('4', 1)]
-# ------------------------ 新增：Grad-CAM 特征重要性 ------------------------
-def gradcam_feature_importance(model, device, test_loader, feature_names, out_dir):
+# ------------------------ 新增：特征重要性 ------------------------
+def gradient-based input attribution(model, device, test_loader, feature_names, out_dir):
     model.eval()
     model.to(device)
     target_layer = model.tcn[-1].net[0]
@@ -503,14 +503,14 @@ def run_fold(model, device, train_loader, val_loader, test_loader,
     feats_arr = np.vstack(feat_list) if feat_list else None
     labels_arr = np.array(lab_list) if lab_list else None
 
-    gradcam_feature_importance(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
+    gradient-based input attribution(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
     # 每折 t-SNE
     if feats_arr is not None and labels_arr.size > 0:
         plot_tsne(feats_arr, labels_arr, os.path.join(out_dir, "tsne.png"),
                   title="t-SNE (Test, best model)", dpi=300)
 
         # 计算单折特征重要性
-    fold_feat_score = gradcam_feature_importance(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
+    fold_feat_score = gradient-based input attribution(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
 
     # 每折 t-SNE
     if feats_arr is not None and labels_arr.size > 0:
