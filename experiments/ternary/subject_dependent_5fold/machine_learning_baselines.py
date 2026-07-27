@@ -135,8 +135,20 @@ def plot_confusion_matrix(conf_mat, acc, total, side_txt, save_path, n_classes=3
     plt.imshow(M, cmap='Blues', interpolation='nearest')
     plt.colorbar()
     ticks = np.arange(n + 1)
-    plt.xticks(ticks, [f'P{i}' for i in range(n)] + ['Precision'], rotation=45, fontsize=12)
-    plt.yticks(ticks, [f'T{i}' for i in range(n)] + ['Recall'], fontsize=12)
+    plt.xticks(
+        ticks,
+        [f'P{i}' for i in range(n)]
+        + ['Recall'],
+        rotation=45,
+        fontsize=12
+    )
+    
+    plt.yticks(
+        ticks,
+        [f'T{i}' for i in range(n)]
+        + ['Precision'],
+        fontsize=12
+    )
 
     thresh = M.max() / 2
     for i, j in np.ndindex(M.shape):
@@ -236,30 +248,66 @@ def make_classifier(key, args):
     raise ValueError(f"Unknown model key: {key}")
 
 # ------------------------ 计算多分类指标（UAR=macro recall） ------------------------
-def calculate_multiclass_metrics(y_true, y_pred, y_score=None):
-    """计算多分类指标"""
-    acc = accuracy_score(y_true, y_pred)
-    pre = precision_score(y_true, y_pred, average='weighted', zero_division=0)
-    rec = recall_score(y_true, y_pred, average='macro', zero_division=0)  # ← 改成 macro（UAR）
-    f1s = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+def calculate_multiclass_metrics(
+    y_true,
+    y_pred,
+    y_score=None
+):
+    acc = accuracy_score(
+        y_true,
+        y_pred
+    )
 
-    auc = 0.0
+    pre = precision_score(
+        y_true,
+        y_pred,
+        average='macro',
+        zero_division=0
+    )
+
+    rec = recall_score(
+        y_true,
+        y_pred,
+        average='macro',
+        zero_division=0
+    )
+
+    f1s = f1_score(
+        y_true,
+        y_pred,
+        average='macro',
+        zero_division=0
+    )
+
+    auc_value = np.nan
+
     if y_score is not None:
         try:
-            auc = roc_auc_score(y_true, y_score, multi_class='ovr', average='macro')
-        except Exception:
-            try:
-                auc = roc_auc_score(y_true, y_score, multi_class='ovo', average='macro')
-            except Exception:
-                auc = 0.0
-    return {'acc': acc, 'pre': pre, 'rec': rec, 'f1': f1s, 'auc': auc}
+            auc_value = roc_auc_score(
+                y_true,
+                y_score,
+                multi_class='ovr',
+                average='macro'
+            )
+        except ValueError as exc:
+            print(
+                f"⚠️ macro-OvR AUC计算失败：{exc}"
+            )
+
+    return {
+        'acc': acc,
+        'pre': pre,
+        'rec': rec,
+        'f1': f1s,
+        'auc': auc_value
+    }
 
 # ------------------------ 主程序 ------------------------
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-root', type=str, default=os.path.join('data_rml'))
     parser.add_argument('--result-dir', type=str, default='triple_5K_dependent_68')
-    parser.add_argument('--models', default='nb,svm,knn,dt,rf,ab', help="nb,svm,knn,dt,rf,ab 或 all")
+    parser.add_argument('--models', default='svm,knn,dt', help="nb,svm,knn,dt,rf,ab 或 all")
     parser.add_argument('--datasets', default='MCI,HC,ALL', help="MCI,HC,ALL（逗号分隔）")
     parser.add_argument('--random_state', type=int, default=42)
     parser.add_argument('--n_jobs', type=int, default=-1)
@@ -358,12 +406,15 @@ def main():
                 pre = metrics['pre']
                 f1s = metrics['f1']
                 auc = metrics['auc']
-
-                side_txt = (f"{dtype} {key.upper()} Fold {k+1}\n"
-                            f"Acc={acc:.4f}  UAR(macro)={rec:.4f}\n"
-                            f"Pre(w)= {pre:.4f}  F1(w)={f1s:.4f}\n"
-                            f"AUC(macro)={auc:.4f}")
-
+                side_txt = (
+                    f"{dtype} {key.upper()} Fold {k+1}\n"
+                    f"Acc={acc:.4f}\n"
+                    f"Recall(macro)={rec:.4f}\n"
+                    f"Precision(macro)={pre:.4f}\n"
+                    f"F1(macro)={f1s:.4f}\n"
+                    f"AUC(macro-OvR)={auc:.4f}"
+                )
+                
                 fold_dir = os.path.join(res_dir, f"fold_{k+1:02d}")
                 os.makedirs(fold_dir, exist_ok=True)
 
@@ -390,11 +441,14 @@ def main():
                 opc = overall_metrics['pre']
                 of1 = overall_metrics['f1']
                 oauc = overall_metrics['auc']
-
-                otxt = (f"{dtype} {key.upper()} Overall\n"
-                        f"Acc={oa:.4f}  UAR(macro)={orc:.4f}\n"
-                        f"Pre(w)={opc:.4f}  F1(w)={of1:.4f}\n"
-                        f"AUC(macro)={oauc:.4f}")
+                otxt = (
+                    f"{dtype} {key.upper()} Overall\n"
+                    f"Acc={oa:.4f}\n"
+                    f"Recall(macro)={orc:.4f}\n"
+                    f"Precision(macro)={opc:.4f}\n"
+                    f"F1(macro)={of1:.4f}\n"
+                    f"AUC(macro-OvR)={oauc:.4f}"
+                )
                 plot_confusion_matrix(total_conf, oa, len(y_t_all), otxt,
                                       os.path.join(res_dir, "confusion_overall.png"), n_classes=3)
                 plot_roc_safe(y_t_all, y_pr_all_array, f"{dtype} {key.upper()} Overall ROC",
@@ -407,9 +461,10 @@ def main():
                     f.write("=" * 50 + "\n")
                     f.write(f"Accuracy: {oa:.4f}\n")
                     f.write(f"UAR (macro recall): {orc:.4f}\n")
-                    f.write(f"Precision (weighted): {opc:.4f}\n")
-                    f.write(f"F1 (weighted): {of1:.4f}\n")
-                    f.write(f"AUC (macro): {oauc:.4f}\n")
+                    f.write(f"Precision (macro): {opc:.4f}\n")
+                    f.write(f"Recall (macro): {orc:.4f}\n")
+                    f.write(f"F1 (macro): {of1:.4f}\n")
+                    f.write(f"AUC (macro-OvR): {oauc:.4f}\n")
                     f.write(f"Total Samples: {len(y_t_all)}\n")
                     f.write(f"Total Subjects: {len(subjects)}\n")
                     f.write("\nClass Distribution:\n")
