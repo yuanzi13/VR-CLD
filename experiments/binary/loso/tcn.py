@@ -64,7 +64,7 @@ class TCN(nn.Module):
     def extract_feat(self, x):
         z = self.tcn(x)
         g = self.pool(z).squeeze(-1)
-        return 
+        return g
 
 # ------------------------------------------------------
 # 固定列 & 标签
