@@ -338,7 +338,7 @@ def main():
                         choices=['MLP', 'LSTM', 'Transformer', 'CNN'], required=True)
     parser.add_argument('--gpu-id', type=int, default=None,
         help='逻辑 GPU 号（受 CUDA_VISIBLE_DEVICES 影响）；不填默认 0')
-    parser.add_argument('--epochs', type=int, default=5000)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--window-size', type=int, default=240)
     parser.add_argument('--overlap', type=float, default=0.0)
@@ -346,7 +346,7 @@ def main():
     parser.add_argument('--data-root', type=str, default='data_rml',
                         help="数据根目录（默认 data_rml；也可填绝对路径或 DeepLearning/data_rml）")
     parser.add_argument('--patience', type=int, default=80, help='EarlyStopping patience')
-    parser.add_argument('--lr', type=float, default=1e-4, help='学习率')
+    parser.add_argument('--lr', type=float, default=1e-3, help='学习率')
     parser.add_argument('--early-metric', type=str, default='val_loss',
                         choices=['val_loss', 'val_acc'],
                         help='早停监控指标：val_loss(越小越好) 或 val_acc(越大越好)')
