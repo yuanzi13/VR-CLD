@@ -38,7 +38,7 @@ REQUIRED_COLUMNS = [
 STAGE_LABEL = [('1', 0), ('2', 1), ('3', 2), ('4', 2)]
 N_CLASSES = 3
 # ------------------------ Grad-CAM 特征重要性 ------------------------
-def gradcam_feature_importance(model, device, test_loader, feature_names, out_dir):
+def gradient_input_attribution(model, device, test_loader, feature_names, out_dir):
     model.eval()
     model.to(device)
     feat_importance = np.zeros(len(feature_names))
@@ -165,8 +165,18 @@ def plot_confusion_matrix(conf_mat, acc, total, side_txt, save_path, auc_value=N
     plt.imshow(M, cmap='Blues', interpolation='nearest')
     plt.colorbar()
     ticks = np.arange(n + 1)
-    plt.xticks(ticks, [f'P{i}' for i in range(n)] + ['Precision'], rotation=45, fontsize=10)
-    plt.yticks(ticks, [f'T{i}' for i in range(n)] + ['Recall'], fontsize=10)
+    plt.xticks(
+        ticks,
+        [f'P{i}' for i in range(n)] + ['Recall'],
+        rotation=45,
+        fontsize=10
+    )
+    
+    plt.yticks(
+        ticks,
+        [f'T{i}' for i in range(n)] + ['Precision'],
+        fontsize=10
+    )
 
     thresh = M.max() / 2 if M.size else 0.5
     for i, j in np.ndindex(M.shape):
@@ -434,7 +444,15 @@ def eval_on_loader(model, loader, device, crit):
 def train_with_early_stop(model, device, train_loader, val_loader, epochs, lr, weight_decay,
                           patience, min_delta, monitor='val_acc', ckpt_path=None):
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    crit = nn.CrossEntropyLoss()
+    class_weights = torch.tensor(
+        [1.0, 1.0, 0.5],
+        dtype=torch.float32,
+        device=device
+    )
+    
+    crit = nn.CrossEntropyLoss(
+        weight=class_weights
+    )
 
     best_score = -np.inf if monitor == 'val_acc' else np.inf
     best_state = None
@@ -546,7 +564,7 @@ def main():
     # 早停
     parser.add_argument('--patience', type=int, default=80)
     parser.add_argument('--min-delta', type=float, default=1e-4)
-    parser.add_argument('--monitor', type=str, default='val_acc', choices=['val_acc','val_loss'])
+    parser.add_argument('--monitor', type=str, default='val_loss', choices=['val_acc','val_loss'])
 
     # TCN 架构
     parser.add_argument('--kernel-size', type=int, default=3)
@@ -681,7 +699,22 @@ def main():
             )
 
             # ===================== 每折：特征重要性 =====================
-            fold_feat_score = gradcam_feature_importance(model, device, test_loader, REQUIRED_COLUMNS, fold_dir)
+            fold_feat_score = gradient_input_attribution(
+                model,
+                device,
+                test_loader,
+                REQUIRED_COLUMNS,
+                fold_dir
+            )
+            
+            # 必须在五折循环内部立即保存本折结果
+            if fold_feat_score is not None:
+                fold_feat_scores.append(fold_feat_score)
+            
+                print(
+                    f"[INFO][{dtype}] Fold {k + 1}: "
+                    f"已保存通道重要性，共累计 {len(fold_feat_scores)} 折"
+                )
 
             cm  = confusion_matrix(y_true, y_pred, labels=list(range(N_CLASSES)))
             acc = accuracy_score(y_true, y_pred)
@@ -722,13 +755,22 @@ def main():
         if accs:
             plot_acc_curve(accs, fold_labels, os.path.join(res_dir, "accuracy_across_folds.png"))
                 # ===================== 5折平均：特征重要性总图 =====================
-        if 'fold_feat_scores' not in locals():
-            fold_feat_scores = []
-        if 'fold_feat_score' in locals() and fold_feat_score is not None:
-            fold_feat_scores.append(fold_feat_score)
 
         if len(fold_feat_scores) > 0:
-            mean_feat = np.mean(np.array(fold_feat_scores), axis=0)
+            feature_array = np.stack(
+                fold_feat_scores,
+                axis=0
+            )
+        
+            mean_feat = np.mean(
+                feature_array,
+                axis=0
+            )
+        
+            print(
+                f"[INFO][{dtype}] 使用 "
+                f"{feature_array.shape[0]} 折计算平均通道重要性"
+            )
             idx = np.argsort(mean_feat)[::-1]
             top_names = [REQUIRED_COLUMNS[i] for i in idx]
             top_vals = mean_feat[idx]
