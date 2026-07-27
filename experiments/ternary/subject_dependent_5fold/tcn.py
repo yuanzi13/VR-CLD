@@ -464,7 +464,7 @@ def test_predict(model, test_loader, device, collect_feat=False):
     y_proba_rows = []
     feats_rows, labels_rows = [], []
 
-    for xb, yb in test_loader:
+    for xb, yb in val_loader:
         xb = xb.to(device)
         logits = model(xb)
         proba = torch.softmax(logits, dim=1).cpu().numpy()
