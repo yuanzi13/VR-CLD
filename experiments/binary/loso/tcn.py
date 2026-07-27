@@ -12,9 +12,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-# ------------------------------------------------------
-# TCN 模型（来自你提供的原代码，保持一致）
-# ------------------------------------------------------
 class Chomp1d(nn.Module):
     def __init__(self, chomp_size): super().__init__(); self.chomp_size = chomp_size
     def forward(self, x):
@@ -101,14 +98,7 @@ def windowize(arr, label, window_size=240):
 # 提取指定测试集的数据
 # ------------------------------------------------------
 def load_test_data(data_root, test_subjects):
-    """
-    加载指定测试受试者的数据
-    
-    Args:
-        data_root: 数据根目录
-        test_subjects: 测试受试者列表，格式为 [('MCI', '06'), ('HC', '07'), ...]
-    """
-    feats, labels = [], []
+     feats, labels = [], []
     
     for pop, subj_id in test_subjects:
         for stage, lab in STAGE_LABEL:
