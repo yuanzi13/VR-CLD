@@ -284,7 +284,7 @@ class TemporalBlock(nn.Module):
         return self.relu(out + res)
 
 class TemporalConvNet(nn.Module):
-    def __init__(self, num_inputs, num_channels, kernel_size=3, dropout=0.25):
+    def __init__(self, num_inputs, num_channels, kernel_size=3, dropout=0.2):
         super().__init__()
         layers = []
         for i in range(len(num_channels)):
@@ -300,7 +300,7 @@ class TemporalConvNet(nn.Module):
         return self.network(x)
 
 class TCNClassifier(nn.Module):
-    def __init__(self, in_channels, n_classes=2, tcn_channels=[32,64,64], kernel_size=3, dropout=0.25):
+    def __init__(self, in_channels, n_classes=2, tcn_channels=[32,64,64], kernel_size=3, dropout=0.2):
         super().__init__()
         self.tcn = TemporalConvNet(in_channels, tcn_channels, kernel_size=kernel_size, dropout=dropout)
         self.head = nn.Linear(tcn_channels[-1], n_classes)
@@ -647,12 +647,12 @@ def parse_args():
                         help='自定义要并行启动的模型列表，逗号分隔（默认 nb,svm,knn,dt,rf,ab,tcn）')
 
     # —— TCN 训练超参 ——
-    parser.add_argument('--tcn_epochs', type=int, default=300)
+    parser.add_argument('--tcn_epochs', type=int, default=500)
     parser.add_argument('--tcn_batch', type=int, default=256)
     parser.add_argument('--tcn_lr', type=float, default=1e-3)
-    parser.add_argument('--tcn_patience', type=int, default=30)
+    parser.add_argument('--tcn_patience', type=int, default=80)
     parser.add_argument('--tcn_kernel', type=int, default=3)
-    parser.add_argument('--tcn_dropout', type=float, default=0.25)
+    parser.add_argument('--tcn_dropout', type=float, default=0.2)
 
     args = parser.parse_args()
 
