@@ -460,11 +460,22 @@ def run_fold(model, device, train_loader, val_loader, test_loader,
             print(f"  Epoch {ep}/{epochs} | train_loss={train_loss:.4f} acc={train_acc:.4f} | "
                   f"val_loss={val_loss:.4f} acc={val_acc:.4f}")
 
-        improved = early.step(val_acc)
+        improved = early.step(val_loss)
+        
         if improved and save_best:
-            torch.save({'epoch': ep, 'state_dict': model.state_dict()}, best_path)
+            torch.save(
+                {
+                    'epoch': ep,
+                    'state_dict': model.state_dict()
+                },
+                best_path
+            )
+        
         if early.should_stop():
-            print(f"  ▲ Early stopping at epoch {ep} (best val acc={early.best:.4f}).")
+            print(
+                f"Early stopping at epoch {ep} "
+                f"(best val loss={early.best:.4f})."
+            )
             break
 
     plot_train_val_curves(history, os.path.join(out_dir, 'curve_loss_acc.png'))
