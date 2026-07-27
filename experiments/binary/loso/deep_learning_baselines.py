@@ -1,23 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-MIX_2.py：四模型对比（MLP / LSTM / Transformer / CNN）LOSO 留一交叉验证
------------------------------------------------------------------------
-· 新数据结构（替换旧 A/B/C/D）：
-  data_root/<Population>/<stage>/<number>.csv
-  - Population: MCI 或 HC
-  - stage: 1/2 → label=0；3/4 → label=1
-  - number: MCI=1..26，HC=1..42（各自计数）
-· 四模型：MLP、LSTM、Transformer、CNN
-· 三组：MCI / HC / ALL（移除 SCD）
-· 每折：训练集再划 10% 验证，默认 1000 epochs
-· 输出到：Binary_LOSO_independent_68/<MODEL>/<GROUP>/
-  - loss.png / acc.png
-  - confusion.png（每折） / confusion_overall.png（整体）
-  - tsne.png（每折） / tsne_overall.png（整体）
-"""
-
 import os
 import glob
 import argparse
