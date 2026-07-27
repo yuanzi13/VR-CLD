@@ -439,7 +439,7 @@ def main():
             model.eval()
             y_true, y_pred, y_score = [], [], []
             with torch.no_grad():
-                for xb, yb in val_loader:
+                for xb, yb in test_loader:
                     xb = xb.to(device)
                     logits = model(xb)
                     prob1 = torch.softmax(logits, dim=1)[:, 1]
@@ -468,7 +468,7 @@ def main():
             # 7) t-SNE（fold）+ 累计 Overall
             feats, labs = [], []
             with torch.no_grad():
-                for xb, yb in val_loader:
+                for xb, yb in test_loader:
                     xb = xb.to(device)
                     f = model.extract(xb)
                     feats.append(f.cpu().numpy()); labs.extend(yb.tolist())
