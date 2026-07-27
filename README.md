@@ -1,6 +1,6 @@
 # VR-CLD
 A virtual reality-based cognitive load classification framework for older adults
-using eye-tracking signals and deep learning models.
+using eye-tracking signals.
 
 Due to ethical restrictions, raw participant data cannot be publicly released. 
 A synthetic example dataset is provided to demonstrate the data format and 
@@ -32,7 +32,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## Repository Structure
 
-- `data/synthetic/`: synthetic example datasets
+- `data`: example datasets
 - `preprocessing/`: preprocessing scripts
 - `experiments/binary/`: binary classification experiments
 - `experiments/ternary/`: ternary classification experiments
