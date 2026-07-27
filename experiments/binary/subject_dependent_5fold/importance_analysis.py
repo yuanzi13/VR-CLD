@@ -43,7 +43,7 @@ REQUIRED_COLUMNS = [
 # ------------------------ 标签映射（二分类） ------------------------
 STAGE_LABEL = [('1', 0), ('2', 0), ('3', 1), ('4', 1)]
 # ------------------------ 新增：特征重要性 ------------------------
-def gradient-based input attribution(model, device, test_loader, feature_names, out_dir):
+def gradient_input_attribution(model, device, test_loader, feature_names, out_dir):
     model.eval()
     model.to(device)
     target_layer = model.tcn[-1].net[0]
@@ -514,7 +514,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader,
     feats_arr = np.vstack(feat_list) if feat_list else None
     labels_arr = np.array(lab_list) if lab_list else None
 
-    gradient-based input attribution(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
+    gradient_input_attribution(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
     # 每折 t-SNE
     if feats_arr is not None and labels_arr.size > 0:
         plot_tsne(feats_arr, labels_arr, os.path.join(out_dir, "tsne.png"),
