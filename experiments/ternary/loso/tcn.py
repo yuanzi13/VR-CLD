@@ -5,8 +5,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from scipy.spatial.distance import euclidean
 from sklearn.metrics import silhouette_score, davies_bouldin_score
-import os, argparse
-import numpy as np
+import argparse
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -41,7 +40,7 @@ REQUIRED_COLUMNS = [
 # 1 → 0，2 → 1，3/4 → 2
 STAGE_LABEL = [('1', 0), ('2', 1), ('3', 2), ('4', 2)]
 # 类别名称映射（用于 t-SNE 图例与说明）
-CLASS_NAMES = {0: 'LCL', 1: 'HCL', 2: 'MCL'}  # note: user requested 0=LCL;1=HCL in t-SNE labeling
+CLASS_NAMES = {0: 'LCL', 1: 'MCL', 2: 'HCL'}  # note: user requested 0=LCL;1=HCL in t-SNE labeling
 
 # ------------------------ 工具函数 ------------------------
 def windowize_from_array(arr_ch_t: np.ndarray, label: int, window_size: int = 240, overlap: float = 0.0):
@@ -256,7 +255,7 @@ def plot_tsne(feats, labels, save_path, title=None, dpi=300,
 
     # 颜色与名称
     colors = {0: '#1f77b4', 1: '#2ca02c', 2: '#d62728'}
-    name_map = {0: 'LCL', 1: 'HCL', 2: 'MCL'}
+    name_map = {0: 'LCL', 1: 'MCL', 2: 'HCL'}
     plt.figure(figsize=(6.8, 5.2))
     ax = plt.gca()
     centroids = {}
@@ -521,13 +520,13 @@ def main():
     parser.add_argument('--overlap', type=float, default=0.0)
 
     # 训练超参
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--weight-decay', type=float, default=1e-4)
 
     # 早停
-    parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--patience', type=int, default=80)
     parser.add_argument('--min-delta', type=float, default=0.0)
 
     # TCN 架构
