@@ -467,7 +467,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
         model.eval()
         v_total, v_correct, v_loss_sum = 0, 0, 0.0
         with torch.no_grad():
-            for xb, yb in test_loader:
+            for xb, yb in val_loader:
                 xb, yb = xb.to(device), yb.to(device)
                 logits = model(xb)
                 loss = crit(logits, yb)
@@ -510,7 +510,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
     y_true, y_pred, y_prob = [], [], []
     feats_collect, labels_collect = [], []
     with torch.no_grad():
-        for xb, yb in test_loader:
+        for xb, yb in val_loader:
             xb = xb.to(device)
             logits = model(xb)
             prob = torch.softmax(logits, dim=1).cpu().numpy()
@@ -541,14 +541,14 @@ def plot_binary_roc_compare(entries, save_path, title="LCL vs HCL ROC Comparison
         y_true_all = np.asarray(y_true_all)
         y_prob_all = np.asarray(y_prob_all)
         # 仅保留 LCL(0) 与 HCL(2)
-        mask = (y_true_all == 0) | (y_true_all == 2)
+        y_true_bin = y_true_all.astype(int)
         if mask.sum() == 0:
             print(f"  ⚠️ {name} 在比较 ROC 时没有 LCL/HCL 样本，跳过")
             continue
         y_true_bin = (y_true_all[mask] == 2).astype(int)  # 1 表示 HCL
         # 取 HCL 的概率（原 prob 对应 class index 2）
         if y_prob_all.ndim == 2 and y_prob_all.shape[1] >= 3:
-            y_score = y_prob_all[mask, 2]
+            y_score = y_prob_all[:, 1]
         else:
             # 如果没有多类概率，则跳过
             print(f"  ⚠️ {name} 没有多类概率列，跳过")
@@ -735,9 +735,9 @@ def main():
             # ===== 评估与图 =====
             cm  = confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))
             acc = accuracy_score(y_true, y_pred)
-            pre = precision_score(y_true, y_pred, average='macro', zero_division=0)
-            rec = recall_score(y_true, y_pred, average='macro', zero_division=0)
-            f1s = f1_score(y_true, y_pred, average='macro', zero_division=0)
+            pre = precision_score(y_true, y_pred, average='binary', pos_label=1, zero_division=0)
+            rec = recall_score(y_true, y_pred, average='binary', pos_label=1, zero_division=0)
+            f1s = f1_score(y_true, y_pred, average='binary', pos_label=1, zero_division=0)
             try:
                 ovr_auc = roc_auc_score(y_true, y_prob, multi_class='ovr', average='macro')
             except Exception:
