@@ -119,9 +119,18 @@ def plot_confusion_matrix(conf_mat, acc, total, side_txt, save_path, auc_value=N
     plt.imshow(M, cmap='Blues', interpolation='nearest')
     plt.colorbar()
     ticks = np.arange(n + 1)
-    plt.xticks(ticks, [f'P{i}' for i in range(n)] + ['Precision'], rotation=45, fontsize=10)
-    plt.yticks(ticks, [f'T{i}' for i in range(n)] + ['Recall'], fontsize=10)
-
+    plt.xticks(
+        ticks,
+        [f'P{i}' for i in range(n)] + ['Recall'],
+        rotation=45,
+        fontsize=10
+    )
+    
+    plt.yticks(
+        ticks,
+        [f'T{i}' for i in range(n)] + ['Precision'],
+        fontsize=10
+    )
     thresh = M.max() / 2 if M.size else 0.5
     for i, j in np.ndindex(M.shape):
         v = M[i, j]
@@ -166,7 +175,7 @@ def compute_macro_roc(y_true, y_proba, n_classes):
         mean_tpr += np.interp(all_fpr, fpr[c], tpr[c])
     mean_tpr /= n_classes
     try:
-        macro_auc = auc(all_fpr, mean_tpr)
+        macro_auc = auc(all_fpr,mean_tpr)
     except Exception:
         macro_auc = float('nan')
     return all_fpr, mean_tpr, macro_auc
@@ -388,7 +397,15 @@ def eval_on_loader(model, loader, device, crit):
 def train_with_early_stop(model, device, train_loader, val_loader, epochs, lr, weight_decay,
                           patience, min_delta, monitor='val_acc', ckpt_path=None):
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    crit = nn.CrossEntropyLoss()
+    class_weights = torch.tensor(
+        [1.0, 1.0, 0.5],
+        dtype=torch.float32,
+        device=device
+    )
+    
+    crit = nn.CrossEntropyLoss(
+        weight=class_weights
+    )
 
     best_score = -np.inf if monitor == 'val_acc' else np.inf
     best_state = None
@@ -500,7 +517,7 @@ def main():
     # 早停
     parser.add_argument('--patience', type=int, default=80)
     parser.add_argument('--min-delta', type=float, default=1e-4)
-    parser.add_argument('--monitor', type=str, default='val_acc', choices=['val_acc','val_loss'])
+    parser.add_argument('--monitor', type=str, default='val_loss', choices=['val_acc','val_loss'])
 
     # TCN 架构
     parser.add_argument('--kernel-size', type=int, default=3)
