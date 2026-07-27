@@ -403,7 +403,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
         model.eval()
         v_total, v_correct, v_loss_sum = 0, 0, 0.0
         with torch.no_grad():
-            for xb, yb in test_loader:
+            for xb, yb in val_loader:
                 xb, yb = xb.to(device), yb.to(device)
                 logits = model(xb)
                 loss = crit(logits, yb)
@@ -451,7 +451,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
     y_true, y_pred, y_prob = [], [], []
     feats_collect, labels_collect = [], []  # for t-SNE
     with torch.no_grad():
-        for xb, yb in test_loader:
+        for xb, yb in val_loader:
             xb = xb.to(device)
             logits = model(xb)
             prob = torch.softmax(logits, dim=1).cpu().numpy()  # (B, C)
