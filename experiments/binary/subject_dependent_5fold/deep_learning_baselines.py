@@ -501,7 +501,7 @@ def run_once(args):
 
                     y_true, y_pred, y_prob = [], [], []
                     with torch.no_grad():
-                        for xb, yb in val_loader:
+                        for xb, yb in test_loader:
                             xb = xb.to(device)
                             logits = model(xb)
                             prob1 = torch.softmax(logits, dim=1)[:, 1]
