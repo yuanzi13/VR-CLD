@@ -6,42 +6,8 @@ import math
 from pathlib import Path
 from sklearn import preprocessing
 from scipy import interpolate
-from feature_extraction import fixation_calculate, pupil_calculate, calculate_mean_heart_rate, calculate_blink_statistics, wavelet_denoising
 import matplotlib.pyplot as plt
 
-#未改之前的80hz频率测量的数据先插值为120hz    
-
-def Interpolate_80hz_to_120hz(df):
-    # 插值操作
-    data = np.array(df)
-    row_num = math.ceil(df.shape[0] * 120 / 80)
-    col_num = df.shape[1]
-    new_data = np.empty((row_num, col_num))
-
-    for i in range(col_num):
-        # 生成时间戳，假设每个数据点之间的时间间隔为1/80秒
-        timestamps = np.arange(0, len(data[:, i])/80, 1/80)
-        
-        # 创建 DataFrame 临时变量
-        temp_df = pd.DataFrame({'timestamp': timestamps, 'value': data[:, i]})
-        
-        # 前向插值
-        temp_df['value'] = temp_df['value'].ffill()
-        
-        # 确保数据类型为浮点数
-        temp_df['timestamp'] = temp_df['timestamp'].astype(float)
-        temp_df['value'] = temp_df['value'].astype(float)
-
-        # 生成120Hz的时间戳
-        new_timestamps = np.arange(0, len(data[:, i])/80, 1/120)
-
-        # 使用前向插值计算120Hz的插值数据
-        new_data[:, i] = np.interp(new_timestamps, temp_df['timestamp'], temp_df['value'])
-
-    # 将NumPy数组转换为DataFrame
-    new_df = pd.DataFrame(new_data)
-    new_df.columns = df.columns
-    return new_df
 
 #将眨眼数据插值成正常数据但保留眨眼标志
 def Interpolate_blink(df):
@@ -54,7 +20,7 @@ def Interpolate_blink(df):
     df.loc[df['rightEye_pupil_dilation'] < 2, :] = np.nan
     
 
-    # # 对所有列进行前向插值
+    # # 对所有列进行线性插值
     df.ffill(inplace=True)
     #对所有列进行线性插值
     #df.interpolate(method='linear', inplace=True)
@@ -180,9 +146,6 @@ def preprocess(index, path_to_folders, info_path):
                 # 删除包含 'confidence' 的列
                 df_s = df_s.drop(columns=columns_to_drop)
 
-                #仅当80hz文件夹需要这句
-                if '80hz' in path_to_folders:
-                    df_s = Interpolate_80hz_to_120hz(df_s)
 
                 # 对眨眼数据进行插值
                 df_s = Interpolate_blink(df_s)
@@ -241,7 +204,6 @@ def preprocess(index, path_to_folders, info_path):
                                                                   'total_blinks', 'blink_durations', 'total_blink_duration', 'blink_rate', 'total_blinks_ratio', 'blink_intervals',
                                                                   'mean_heart_rate', 'std_heart_rate', 'median_heart_rate'
                                                                   ])
-                        _, df_feature_sample = feature_extraction(sample, df_feature_sample, f'/public/home/seu_test3/RML/bgimage/bg_image_{i}.png', is_have_heartrate)
                         df_feature_WH.append(df_feature_sample)
                     
                     #print(df_feature_WH)
@@ -265,7 +227,6 @@ def preprocess(index, path_to_folders, info_path):
                                                                   'pupil_mean', 'pupil_std', 'pupil_median', 'pupil_max', 'pupil_min', 'pupil_range','pupil_change_rate',
                                                                   'total_blinks', 'blink_durations', 'total_blink_duration', 'blink_rate', 'total_blinks_ratio', 'blink_intervals'
                                                                   ])
-                        _, df_feature_sample = feature_extraction(sample, df_feature_sample, f'/public/home/seu_test3/RML/bgimage/bg_image_{i}.png', is_have_heartrate)
                         df_feature_WOH.append(df_feature_sample)
                     #print(df_feature_WOH)
                     #把处理好的原始数据存放到正确的文件夹中
@@ -310,13 +271,21 @@ def calculate_sample_number(path_to_folder, folder_num, strr):
 
 
 if __name__ == "__main__":
-    path_to_folders_80hz = '/public/home/seu_test3/RML/80hz'
-    path_to_folders_120hz = '/public/home/seu_test3/RML/120hz'
+    # 最终实验仅使用原始采样率为120 Hz的数据
+    path_to_folders = '/public/home/seu_test3/RML/120hz'
     info_path = '/public/home/seu_test3/RML/info.csv'
-    #分别代表四个文件夹里受试者当前序号
-    index = [[0, 0, 0, 0], [0, 0, 0, 0]]
-    preprocess(index, path_to_folders_80hz, info_path)
-    preprocess(index, path_to_folders_120hz, info_path)
+
+    # 分别记录Data和Feature目录中四类受试者的当前编号
+    index = [
+        [0, 0, 0, 0],
+        [0, 0, 0, 0]
+    ]
+
+    preprocess(
+        index,
+        path_to_folders,
+        info_path
+    )
     # hc_path_wh = f'C:\\Users\\Administrator\\Desktop\\Data_new\\数据集\\WH\\HC\\HC '
     # hc_path_wh_num = 14
     # mci_path_wh = f'C:\\Users\\Administrator\\Desktop\\Data_new\\数据集\\WH\\MCI\\MCI '
