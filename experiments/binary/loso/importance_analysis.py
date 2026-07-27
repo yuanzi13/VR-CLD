@@ -44,8 +44,8 @@ CLASS_NAMES = {
     0: 'LCL',
     1: 'HCL'
 }
-# ------------------------ 新增：Grad-CAM 特征重要性 ------------------------
-def gradcam_feature_importance(model, device, test_loader, feature_names, out_dir):
+# ------------------------ 新增：特征重要性 ------------------------
+def gradient_input_attribution(model, device, test_loader, feature_names, out_dir):
     model.eval()
     model.to(device)
     target_layer = model.tcn[-1].net[0]
@@ -214,7 +214,7 @@ def plot_confusion_matrix(conf_mat, acc, total, side_txt, save_path):
 
 def plot_multiclass_roc(y_true, y_prob, n_classes, title, save_path, include_micro=False):
     """
-    多分类 ROC：每个类别的一对多(OVR)曲线 + 宏平均(macro)曲线（不画 micro，除非 include_micro=True）
+    多分类 ROC
     """
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
@@ -525,51 +525,61 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
     labels_arr = np.array(labels_collect) if labels_collect else None
 
     # ===================== 这里是修复的关键：返回 6 个值 =====================
-    fold_feat_score = gradcam_feature_importance(model, device, test_loader, REQUIRED_COLUMNS, fold_dir)
+    fold_feat_score = gradient_input_attribution(model, device, test_loader, REQUIRED_COLUMNS, fold_dir)
     return np.array(y_true), np.array(y_pred), np.array(y_prob), feats_arr, labels_arr, fold_feat_score
 
 # ------------------------ 比较 ROC（binary LCL vs HCL） ------------------------
-def plot_binary_roc_compare(entries, save_path, title="LCL vs HCL ROC Comparison"):
-    """
-    entries: list of tuples (name, y_true_multi, y_prob_multi)
-    对每项会筛选 y_true != 1（剔除 MCL），并以 prob[:,2] 作为 HCL 的概率（正类）
-    """
-    plt.figure(figsize=(6.4,6.0))
-    colors = ['#1f77b4', '#2ca02c', '#d62728', '#9467bd']
+def plot_binary_roc_compare(
+    entries,
+    save_path,
+    title="LCL vs HCL ROC: MCI / HC / ALL"
+):
+    plt.figure(figsize=(6.4, 6.0))
+    colors = ['#1f77b4', '#2ca02c', '#d62728']
     plotted = 0
-    for i, (name, y_true_all, y_prob_all) in enumerate(entries):
-        y_true_all = np.asarray(y_true_all)
-        y_prob_all = np.asarray(y_prob_all)
-        # 仅保留 LCL(0) 与 HCL(2)
-        y_true_bin = y_true_all.astype(int)
-        if mask.sum() == 0:
-            print(f"  ⚠️ {name} 在比较 ROC 时没有 LCL/HCL 样本，跳过")
+
+    for i, (name, y_true, y_prob) in enumerate(entries):
+        y_true = np.asarray(y_true)
+        y_prob = np.asarray(y_prob)
+
+        if y_prob.ndim != 2 or y_prob.shape[1] != 2:
+            print(f"⚠️ {name} 概率矩阵不是二分类格式，跳过")
             continue
-        y_true_bin = (y_true_all[mask] == 2).astype(int)  # 1 表示 HCL
-        # 取 HCL 的概率（原 prob 对应 class index 2）
-        if y_prob_all.ndim == 2 and y_prob_all.shape[1] >= 3:
-            y_score = y_prob_all[:, 1]
-        else:
-            # 如果没有多类概率，则跳过
-            print(f"  ⚠️ {name} 没有多类概率列，跳过")
+
+        if np.unique(y_true).size < 2:
+            print(f"⚠️ {name} 只有一个类别，无法计算ROC")
             continue
-        try:
-            fpr, tpr, _ = roc_curve(y_true_bin, y_score)
-            aucv = roc_auc_score(y_true_bin, y_score)
-            plt.plot(fpr, tpr, lw=2, color=colors[plotted % len(colors)], label=f"{name} (AUC={aucv:.3f})")
-            plotted += 1
-        except Exception as e:
-            print(f"  ⚠️ {name} ROC 绘制失败: {e}")
+
+        # 类别1为HCL
+        y_score = y_prob[:, 1]
+
+        fpr, tpr, _ = roc_curve(y_true, y_score)
+        aucv = roc_auc_score(y_true, y_score)
+
+        plt.plot(
+            fpr,
+            tpr,
+            lw=2,
+            color=colors[i % len(colors)],
+            label=f"{name} (AUC={aucv:.3f})"
+        )
+        plotted += 1
+
     if plotted == 0:
-        print("  ⚠️ 没有任何组满足 LCL/HCL 比较条件，未绘制比较 ROC。")
+        plt.close()
+        print("⚠️ 没有可用于比较ROC的数据")
         return
-    plt.plot([0,1],[0,1],'k--', lw=1)
-    plt.xlabel('False Positive Rate'); plt.ylabel('True Positive Rate')
+
+    plt.plot([0, 1], [0, 1], 'k--', lw=1)
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
     plt.title(title)
     plt.legend(loc='lower right', fontsize=9)
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path, dpi=300); plt.close()
+    plt.tight_layout()
 
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path, dpi=300)
+    plt.close()
 # ------------------------ 主流程 ------------------------
 def main():
     parser = argparse.ArgumentParser()
@@ -739,13 +749,18 @@ def main():
             rec = recall_score(y_true, y_pred, average='binary', pos_label=1, zero_division=0)
             f1s = f1_score(y_true, y_pred, average='binary', pos_label=1, zero_division=0)
             try:
-                ovr_auc = roc_auc_score(y_true, y_prob, multi_class='ovr', average='macro')
-            except Exception:
-                ovr_auc = 0.0
+                auc = roc_auc_score(y_true, y_prob[:, 1])
+            except ValueError:
+                auc = np.nan
 
-            side_txt = (f"{dtype} TCN LOSO {pop}-{sid:02d}\n"
-                        f"Acc={acc:.4f}\nPre(macro)={pre:.4f}\nRec(macro)={rec:.4f}\n"
-                        f"F1(macro)={f1s:.4f}\nAUC(OVR)={ovr_auc:.4f}")
+            side_txt = (
+                f"{dtype} TCN LOSO {pop}-{sid:02d}\n"
+                f"Acc={acc:.4f}\n"
+                f"Pre={pre:.4f}\n"
+                f"Rec={rec:.4f}\n"
+                f"F1={f1s:.4f}\n"
+                f"AUC={auc:.4f}"
+            )
             plot_confusion_matrix(cm, acc, len(y_true), side_txt, os.path.join(fold_dir, "confusion.png"))
 
             # —— 正式多分类 ROC（画曲线） —— 
@@ -803,16 +818,39 @@ def main():
         # Overall 指标 & 混淆矩阵 & ROC
         if y_t_all:
             oa  = accuracy_score(y_t_all, y_p_all)
-            op  = precision_score(y_t_all, y_p_all, average='macro', zero_division=0)
-            orc = recall_score(y_t_all, y_p_all, average='macro', zero_division=0)
-            of1 = f1_score(y_t_all, y_p_all, average='macro', zero_division=0)
+            op = precision_score(
+                y_t_all,
+                y_p_all,
+                average='binary',
+                pos_label=1,
+                zero_division=0
+            )
+            
+            orc = recall_score(
+                y_t_all,
+                y_p_all,
+                average='binary',
+                pos_label=1,
+                zero_division=0
+            )
+            
+            of1 = f1_score(
+                y_t_all,
+                y_p_all,
+                average='binary',
+                pos_label=1,
+                zero_division=0
+            )
+            y_t_np = np.asarray(y_t_all)
+            y_pr_np = np.asarray(y_pr_all)
+            
             try:
-                oauc = roc_auc_score(np.array(y_t_all), np.array(y_pr_all), multi_class='ovr', average='macro')
-            except Exception:
-                oauc = 0.0
+                oauc = roc_auc_score(y_t_np, y_pr_np[:, 1])
+            except ValueError:
+                oauc = np.nan
             otxt = (f"{dtype} TCN LOSO Overall\n"
-                    f"Acc={oa:.4f}\nPre(macro)={op:.4f}\nRec(macro)={orc:.4f}\n"
-                    f"F1(macro)={of1:.4f}\nAUC(OVR)={oauc:.4f}")
+                    f"Acc={oa:.4f}\nPre={op:.4f}\nRec={orc:.4f}\n"
+                    f"F1={of1:.4f}\nAUC(OVR)={oauc:.4f}")
             plot_confusion_matrix(total_conf, oa, len(y_t_all), otxt, os.path.join(res_dir, "confusion_overall.png"))
 
             # —— Overall 多分类 ROC（画曲线） —— 
