@@ -539,12 +539,12 @@ def main():
     parser.add_argument('--window-size', type=int, default=240)
     parser.add_argument('--overlap', type=float, default=0.0)
     # 训练超参
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--weight-decay', type=float, default=1e-4)
     # 验证 & 早停
-    parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--patience', type=int, default=80)
     parser.add_argument('--min-delta', type=float, default=0.0)
     parser.add_argument('--val-ratio', type=float, default=0.1)
     # TCN 架构
