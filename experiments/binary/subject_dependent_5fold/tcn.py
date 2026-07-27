@@ -396,11 +396,11 @@ def run_fold(model, device, train_loader, val_loader, test_loader,
             print(f"  Epoch {ep}/{epochs} | train_loss={train_loss:.4f} acc={train_acc:.4f} | "
                   f"val_loss={val_loss:.4f} acc={val_acc:.4f}")
 
-        improved = early.step(val_acc)
+        improved = early.step(val_loss)
         if improved and save_best:
             torch.save({'epoch': ep, 'state_dict': model.state_dict()}, best_path)
         if early.should_stop():
-            print(f"  ▲ Early stopping at epoch {ep} (best val acc={early.best:.4f}).")
+            print(f"  ▲ Early stopping at epoch {ep} (best val loss={early.best:.4f}).")
             break
 
     plot_train_val_curves(history, os.path.join(out_dir, 'curve_loss_acc.png'))
@@ -455,12 +455,12 @@ def main():
     parser.add_argument('--window-size', type=int, default=240)
     parser.add_argument('--overlap', type=float, default=0.0)
     # 训练超参
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--weight-decay', type=float, default=1e-4)
     # 验证 & 早停
-    parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--patience', type=int, default=80)
     parser.add_argument('--min-delta', type=float, default=0.0)
     parser.add_argument('--val-ratio', type=float, default=0.1)
     # TCN 架构
