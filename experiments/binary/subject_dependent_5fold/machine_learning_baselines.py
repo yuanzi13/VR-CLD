@@ -259,7 +259,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-root', type=str, default=os.path.join('DeepLearning','data_rml'))
     parser.add_argument('--result-dir', type=str, default='Binary_5K_dependent_68')
-    parser.add_argument('--models', default='nb,svm,knn,dt,rf,ab', help="nb,svm,knn,dt,rf,ab 或 all")
+    parser.add_argument('--models', default='svm,knn,dt', help="nb,svm,knn,dt,rf,ab 或 all")
     parser.add_argument('--datasets', default='MCI,HC,ALL', help="MCI,HC,ALL（逗号分隔）")
     parser.add_argument('--random_state', type=int, default=42)
     parser.add_argument('--n_jobs', type=int, default=-1)
@@ -301,454 +301,454 @@ def main():
             continue
 
         print(f"[{dtype}] 扫描到受试者 {len(subjects)} 人，开始构建窗口 ...")
-        subject_data = build_subject_windows(
+        subject_data = merge_subject_folds(
             args.data_root, subjects, REQUIRED_COLUMNS,
             args.window_size, args.overlap
         )
 
-subject_ids = list(subject_data.keys())
-
-usable = [
-    sid
-    for sid in subject_ids
-    if len(subject_data[sid]['Y']) > 0
-]
-
-print(
-    f"[{dtype}] 可用受试者："
-    f"{len(usable)} / {len(subject_ids)}"
-)
-
-if not usable:
-    print(f"[{dtype}] 没有可用受试者，跳过")
-    continue
-
-# 将各受试者的第1～5份窗口分别汇总
-folds = merge_subject_folds(
-    subject_data,
-    usable,
-    n_folds=5
-)
-
-# 检查各折样本与标签分布
-for k in range(5):
-    fold_y = np.asarray(folds[k]['Y'])
-
-    if fold_y.size == 0:
-        print(
-            f"[DEBUG][{dtype}] "
-            f"Fold {k + 1}: 空折"
-        )
-    else:
-        labels, counts = np.unique(
-            fold_y,
-            return_counts=True
-        )
-
-        distribution = dict(
-            zip(labels.tolist(), counts.tolist())
-        )
-
-        print(
-            f"[DEBUG][{dtype}] "
-            f"Fold {k + 1}: "
-            f"窗口={len(fold_y)}, "
-            f"标签={distribution}"
-        )
-
-for key in models_req:
-    model_upper = key.upper()
-
-    res_dir = os.path.join(
-        args.result_dir,
-        model_upper,
-        dtype
+    subject_ids = list(subject_data.keys())
+    
+    usable = [
+        sid
+        for sid in subject_ids
+        if len(subject_data[sid]['Y']) > 0
+    ]
+    
+    print(
+        f"[{dtype}] 可用受试者："
+        f"{len(usable)} / {len(subject_ids)}"
     )
-    os.makedirs(res_dir, exist_ok=True)
-
-    total_conf = np.zeros((2, 2), dtype=int)
-
-    y_t_all = []
-    y_p_all = []
-    y_pr_all = []
-
-    accs = []
-    fold_labels = []
-
-    # =========================
-    # subject-dependent 5-fold
-    # =========================
+    
+    if not usable:
+        print(f"[{dtype}] 没有可用受试者，跳过")
+        continue
+    
+    # 将各受试者的第1～5份窗口分别汇总
+    folds = merge_subject_folds(
+        subject_data,
+        usable,
+        n_folds=5
+    )
+    
+    # 检查各折样本与标签分布
     for k in range(5):
-        # 第k折作为测试集
-        Xte_list = folds[k]['X']
-        Yte_list = folds[k]['Y']
-
-        # 其余4折作为训练集
-        Xtr_list = []
-        Ytr_list = []
-
-        for j in range(5):
-            if j == k:
-                continue
-
-            Xtr_list.extend(folds[j]['X'])
-            Ytr_list.extend(folds[j]['Y'])
-
-        print(
-            f"[{model_upper}][{dtype}] "
-            f"Fold {k + 1}/5 | "
-            f"train={len(Ytr_list)} windows, "
-            f"test={len(Yte_list)} windows"
-        )
-
-        if not Xtr_list or not Xte_list:
+        fold_y = np.asarray(folds[k]['Y'])
+    
+        if fold_y.size == 0:
             print(
-                f"⚠️ Fold {k + 1} "
-                f"训练集或测试集为空，跳过"
+                f"[DEBUG][{dtype}] "
+                f"Fold {k + 1}: 空折"
             )
-            continue
-
-        # folds中保存的是np.ndarray
-        Xtr = np.vstack(Xtr_list)
-        Xte = np.vstack(Xte_list)
-
-        Ytr = np.asarray(
-            Ytr_list,
-            dtype=np.int64
+        else:
+            labels, counts = np.unique(
+                fold_y,
+                return_counts=True
+            )
+    
+            distribution = dict(
+                zip(labels.tolist(), counts.tolist())
+            )
+    
+            print(
+                f"[DEBUG][{dtype}] "
+                f"Fold {k + 1}: "
+                f"窗口={len(fold_y)}, "
+                f"标签={distribution}"
+            )
+    
+    for key in models_req:
+        model_upper = key.upper()
+    
+        res_dir = os.path.join(
+            args.result_dir,
+            model_upper,
+            dtype
         )
-        Yte = np.asarray(
-            Yte_list,
-            dtype=np.int64
-        )
-
-        # 每个外层fold只用训练折拟合Scaler
-        scaler = StandardScaler()
-        scaler.fit(Xtr)
-
-        Xtr_s = scaler.transform(Xtr)
-        Xte_s = scaler.transform(Xte)
-
-        # ---------------------
-        # 建立和训练分类器
-        # ---------------------
-        clf = make_classifier(key, args)
-
-        if isinstance(clf, str) and clf == 'KNN_CV':
-            min_class_count = min(
-                int((Ytr == 0).sum()),
-                int((Ytr == 1).sum())
+        os.makedirs(res_dir, exist_ok=True)
+    
+        total_conf = np.zeros((2, 2), dtype=int)
+    
+        y_t_all = []
+        y_p_all = []
+        y_pr_all = []
+    
+        accs = []
+        fold_labels = []
+    
+        # =========================
+        # subject-dependent 5-fold
+        # =========================
+        for k in range(5):
+            # 第k折作为测试集
+            Xte_list = folds[k]['X']
+            Yte_list = folds[k]['Y']
+    
+            # 其余4折作为训练集
+            Xtr_list = []
+            Ytr_list = []
+    
+            for j in range(5):
+                if j == k:
+                    continue
+    
+                Xtr_list.extend(folds[j]['X'])
+                Ytr_list.extend(folds[j]['Y'])
+    
+            print(
+                f"[{model_upper}][{dtype}] "
+                f"Fold {k + 1}/5 | "
+                f"train={len(Ytr_list)} windows, "
+                f"test={len(Yte_list)} windows"
             )
-
-            n_splits = min(
-                5,
-                min_class_count
+    
+            if not Xtr_list or not Xte_list:
+                print(
+                    f"⚠️ Fold {k + 1} "
+                    f"训练集或测试集为空，跳过"
+                )
+                continue
+    
+            # folds中保存的是np.ndarray
+            Xtr = np.vstack(Xtr_list)
+            Xte = np.vstack(Xte_list)
+    
+            Ytr = np.asarray(
+                Ytr_list,
+                dtype=np.int64
             )
-
-            if n_splits < 2:
-                best_k = min(
+            Yte = np.asarray(
+                Yte_list,
+                dtype=np.int64
+            )
+    
+            # 每个外层fold只用训练折拟合Scaler
+            scaler = StandardScaler()
+            scaler.fit(Xtr)
+    
+            Xtr_s = scaler.transform(Xtr)
+            Xte_s = scaler.transform(Xte)
+    
+            # ---------------------
+            # 建立和训练分类器
+            # ---------------------
+            clf = make_classifier(key, args)
+    
+            if isinstance(clf, str) and clf == 'KNN_CV':
+                min_class_count = min(
+                    int((Ytr == 0).sum()),
+                    int((Ytr == 1).sum())
+                )
+    
+                n_splits = min(
                     5,
-                    len(Ytr)
+                    min_class_count
                 )
-
-                model = KNeighborsClassifier(
-                    n_neighbors=best_k
-                )
-                model.fit(Xtr_s, Ytr)
-
-                print(
-                    f"    → KNN使用固定K={best_k}"
-                )
-
-            else:
-                max_k = min(
-                    args.knn_max_k,
-                    len(Ytr)
-                )
-
-                grid = {
-                    'n_neighbors': list(
-                        range(1, max_k + 1)
+    
+                if n_splits < 2:
+                    best_k = min(
+                        5,
+                        len(Ytr)
                     )
-                }
-
-                cv = StratifiedKFold(
-                    n_splits=n_splits,
-                    shuffle=True,
-                    random_state=args.random_state
+    
+                    model = KNeighborsClassifier(
+                        n_neighbors=best_k
+                    )
+                    model.fit(Xtr_s, Ytr)
+    
+                    print(
+                        f"    → KNN使用固定K={best_k}"
+                    )
+    
+                else:
+                    max_k = min(
+                        args.knn_max_k,
+                        len(Ytr)
+                    )
+    
+                    grid = {
+                        'n_neighbors': list(
+                            range(1, max_k + 1)
+                        )
+                    }
+    
+                    cv = StratifiedKFold(
+                        n_splits=n_splits,
+                        shuffle=True,
+                        random_state=args.random_state
+                    )
+    
+                    search = GridSearchCV(
+                        estimator=KNeighborsClassifier(),
+                        param_grid=grid,
+                        cv=cv,
+                        scoring='accuracy',
+                        n_jobs=args.n_jobs
+                    )
+    
+                    search.fit(Xtr_s, Ytr)
+                    model = search.best_estimator_
+    
+                    print(
+                        f"    → KNN最佳K="
+                        f"{search.best_params_['n_neighbors']} "
+                        f"（内部CV={n_splits}折）"
+                    )
+    
+            else:
+                model = clf
+                model.fit(Xtr_s, Ytr)
+    
+            # ---------------------
+            # 外层测试折预测
+            # ---------------------
+            pred = model.predict(Xte_s)
+    
+            if hasattr(model, 'predict_proba'):
+                prob = model.predict_proba(
+                    Xte_s
+                )[:, 1]
+    
+            elif hasattr(model, 'decision_function'):
+                scores = model.decision_function(
+                    Xte_s
+                ).astype(float)
+    
+                score_min = scores.min()
+                score_max = scores.max()
+    
+                prob = (
+                    scores - score_min
+                ) / (
+                    score_max - score_min + 1e-12
                 )
-
-                search = GridSearchCV(
-                    estimator=KNeighborsClassifier(),
-                    param_grid=grid,
-                    cv=cv,
-                    scoring='accuracy',
-                    n_jobs=args.n_jobs
+    
+            else:
+                prob = np.full(
+                    len(Yte),
+                    0.5,
+                    dtype=float
                 )
-
-                search.fit(Xtr_s, Ytr)
-                model = search.best_estimator_
-
-                print(
-                    f"    → KNN最佳K="
-                    f"{search.best_params_['n_neighbors']} "
-                    f"（内部CV={n_splits}折）"
-                )
-
-        else:
-            model = clf
-            model.fit(Xtr_s, Ytr)
-
-        # ---------------------
-        # 外层测试折预测
-        # ---------------------
-        pred = model.predict(Xte_s)
-
-        if hasattr(model, 'predict_proba'):
-            prob = model.predict_proba(
-                Xte_s
-            )[:, 1]
-
-        elif hasattr(model, 'decision_function'):
-            scores = model.decision_function(
-                Xte_s
-            ).astype(float)
-
-            score_min = scores.min()
-            score_max = scores.max()
-
-            prob = (
-                scores - score_min
-            ) / (
-                score_max - score_min + 1e-12
-            )
-
-        else:
-            prob = np.full(
-                len(Yte),
-                0.5,
-                dtype=float
-            )
-
-        # ---------------------
-        # 本折指标
-        # ---------------------
-        acc = accuracy_score(
-            Yte,
-            pred
-        )
-
-        rec = recall_score(
-            Yte,
-            pred,
-            average='binary',
-            pos_label=1,
-            zero_division=0
-        )
-
-        pre = precision_score(
-            Yte,
-            pred,
-            average='binary',
-            pos_label=1,
-            zero_division=0
-        )
-
-        f1s = f1_score(
-            Yte,
-            pred,
-            average='binary',
-            pos_label=1,
-            zero_division=0
-        )
-
-        try:
-            auc = roc_auc_score(
+    
+            # ---------------------
+            # 本折指标
+            # ---------------------
+            acc = accuracy_score(
                 Yte,
-                prob
+                pred
             )
-        except ValueError:
-            auc = np.nan
-
-        side_txt = (
-            f"{dtype} {model_upper} "
-            f"Fold {k + 1}\n"
-            f"Acc={acc:.4f}  "
-            f"Rec={rec:.4f}\n"
-            f"Pre={pre:.4f}  "
-            f"F1={f1s:.4f}\n"
-            f"AUC={auc:.4f}"
-        )
-
-        fold_dir = os.path.join(
-            res_dir,
-            f"fold_{k + 1:02d}"
-        )
-        os.makedirs(fold_dir, exist_ok=True)
-
-        cm = confusion_matrix(
-            Yte,
-            pred,
-            labels=[0, 1]
-        )
-
-        plot_confusion_matrix(
-            cm,
-            acc,
-            len(Yte),
-            side_txt,
-            os.path.join(
-                fold_dir,
-                'confusion.png'
+    
+            rec = recall_score(
+                Yte,
+                pred,
+                average='binary',
+                pos_label=1,
+                zero_division=0
             )
-        )
-
-        plot_roc_safe(
-            Yte,
-            prob,
-            (
+    
+            pre = precision_score(
+                Yte,
+                pred,
+                average='binary',
+                pos_label=1,
+                zero_division=0
+            )
+    
+            f1s = f1_score(
+                Yte,
+                pred,
+                average='binary',
+                pos_label=1,
+                zero_division=0
+            )
+    
+            try:
+                auc = roc_auc_score(
+                    Yte,
+                    prob
+                )
+            except ValueError:
+                auc = np.nan
+    
+            side_txt = (
                 f"{dtype} {model_upper} "
-                f"Fold {k + 1} ROC"
-            ),
-            os.path.join(
-                fold_dir,
-                'roc.png'
+                f"Fold {k + 1}\n"
+                f"Acc={acc:.4f}  "
+                f"Rec={rec:.4f}\n"
+                f"Pre={pre:.4f}  "
+                f"F1={f1s:.4f}\n"
+                f"AUC={auc:.4f}"
             )
-        )
-
-        # 汇总五折结果
-        total_conf += cm
-
-        y_t_all.extend(
-            Yte.tolist()
-        )
-        y_p_all.extend(
-            pred.tolist()
-        )
-        y_pr_all.extend(
-            prob.tolist()
-        )
-
-        accs.append(acc)
-        fold_labels.append(
-            f"Fold {k + 1}"
-        )
-
-    # 五折准确率
-    if accs:
-        plot_acc_curve(
-            accs,
-            fold_labels,
-            os.path.join(
+    
+            fold_dir = os.path.join(
                 res_dir,
-                'accuracy_across_folds.png'
+                f"fold_{k + 1:02d}"
             )
-        )
-
-    # =====================
-    # 汇总五折测试窗口指标
-    # =====================
-    if y_t_all:
-        oa = accuracy_score(
-            y_t_all,
-            y_p_all
-        )
-
-        orc = recall_score(
-            y_t_all,
-            y_p_all,
-            average='binary',
-            pos_label=1,
-            zero_division=0
-        )
-
-        opc = precision_score(
-            y_t_all,
-            y_p_all,
-            average='binary',
-            pos_label=1,
-            zero_division=0
-        )
-
-        of1 = f1_score(
-            y_t_all,
-            y_p_all,
-            average='binary',
-            pos_label=1,
-            zero_division=0
-        )
-
-        try:
-            oauc = roc_auc_score(
+            os.makedirs(fold_dir, exist_ok=True)
+    
+            cm = confusion_matrix(
+                Yte,
+                pred,
+                labels=[0, 1]
+            )
+    
+            plot_confusion_matrix(
+                cm,
+                acc,
+                len(Yte),
+                side_txt,
+                os.path.join(
+                    fold_dir,
+                    'confusion.png'
+                )
+            )
+    
+            plot_roc_safe(
+                Yte,
+                prob,
+                (
+                    f"{dtype} {model_upper} "
+                    f"Fold {k + 1} ROC"
+                ),
+                os.path.join(
+                    fold_dir,
+                    'roc.png'
+                )
+            )
+    
+            # 汇总五折结果
+            total_conf += cm
+    
+            y_t_all.extend(
+                Yte.tolist()
+            )
+            y_p_all.extend(
+                pred.tolist()
+            )
+            y_pr_all.extend(
+                prob.tolist()
+            )
+    
+            accs.append(acc)
+            fold_labels.append(
+                f"Fold {k + 1}"
+            )
+    
+        # 五折准确率
+        if accs:
+            plot_acc_curve(
+                accs,
+                fold_labels,
+                os.path.join(
+                    res_dir,
+                    'accuracy_across_folds.png'
+                )
+            )
+    
+        # =====================
+        # 汇总五折测试窗口指标
+        # =====================
+        if y_t_all:
+            oa = accuracy_score(
                 y_t_all,
-                y_pr_all
+                y_p_all
             )
-        except ValueError:
-            oauc = np.nan
-
-        otxt = (
-            f"{dtype} {model_upper} "
-            f"5-Fold Overall\n"
-            f"Acc={oa:.4f}  "
-            f"Rec={orc:.4f}\n"
-            f"Pre={opc:.4f}  "
-            f"F1={of1:.4f}\n"
-            f"AUC={oauc:.4f}"
-        )
-
-        plot_confusion_matrix(
-            total_conf,
-            oa,
-            len(y_t_all),
-            otxt,
-            os.path.join(
-                res_dir,
-                'confusion_overall.png'
+    
+            orc = recall_score(
+                y_t_all,
+                y_p_all,
+                average='binary',
+                pos_label=1,
+                zero_division=0
             )
-        )
-
-        plot_roc_safe(
-            y_t_all,
-            y_pr_all,
-            (
+    
+            opc = precision_score(
+                y_t_all,
+                y_p_all,
+                average='binary',
+                pos_label=1,
+                zero_division=0
+            )
+    
+            of1 = f1_score(
+                y_t_all,
+                y_p_all,
+                average='binary',
+                pos_label=1,
+                zero_division=0
+            )
+    
+            try:
+                oauc = roc_auc_score(
+                    y_t_all,
+                    y_pr_all
+                )
+            except ValueError:
+                oauc = np.nan
+    
+            otxt = (
                 f"{dtype} {model_upper} "
-                f"5-Fold Overall ROC"
-            ),
-            os.path.join(
+                f"5-Fold Overall\n"
+                f"Acc={oa:.4f}  "
+                f"Rec={orc:.4f}\n"
+                f"Pre={opc:.4f}  "
+                f"F1={of1:.4f}\n"
+                f"AUC={oauc:.4f}"
+            )
+    
+            plot_confusion_matrix(
+                total_conf,
+                oa,
+                len(y_t_all),
+                otxt,
+                os.path.join(
+                    res_dir,
+                    'confusion_overall.png'
+                )
+            )
+    
+            plot_roc_safe(
+                y_t_all,
+                y_pr_all,
+                (
+                    f"{dtype} {model_upper} "
+                    f"5-Fold Overall ROC"
+                ),
+                os.path.join(
+                    res_dir,
+                    'roc_overall.png'
+                )
+            )
+    
+            result_file = os.path.join(
                 res_dir,
-                'roc_overall.png'
+                'overall_results.txt'
             )
-        )
-
-        result_file = os.path.join(
-            res_dir,
-            'overall_results.txt'
-        )
-
-        with open(
-            result_file,
-            'w',
-            encoding='utf-8'
-        ) as file:
-            file.write(
-                f"5-Fold Overall Results for "
-                f"{model_upper} on {dtype}\n"
-            )
-            file.write("=" * 50 + "\n")
-            file.write(f"Accuracy: {oa:.4f}\n")
-            file.write(f"Recall: {orc:.4f}\n")
-            file.write(f"Precision: {opc:.4f}\n")
-            file.write(f"F1 Score: {of1:.4f}\n")
-            file.write(f"AUC: {oauc:.4f}\n")
-            file.write(
-                f"Total Test Windows: "
-                f"{len(y_t_all)}\n"
-            )
-            file.write(
-                f"Completed Folds: "
-                f"{len(accs)}\n"
-            )
-
-    print("All done.")
+    
+            with open(
+                result_file,
+                'w',
+                encoding='utf-8'
+            ) as file:
+                file.write(
+                    f"5-Fold Overall Results for "
+                    f"{model_upper} on {dtype}\n"
+                )
+                file.write("=" * 50 + "\n")
+                file.write(f"Accuracy: {oa:.4f}\n")
+                file.write(f"Recall: {orc:.4f}\n")
+                file.write(f"Precision: {opc:.4f}\n")
+                file.write(f"F1 Score: {of1:.4f}\n")
+                file.write(f"AUC: {oauc:.4f}\n")
+                file.write(
+                    f"Total Test Windows: "
+                    f"{len(y_t_all)}\n"
+                )
+                file.write(
+                    f"Completed Folds: "
+                    f"{len(accs)}\n"
+                )
+    
+        print("All done.")
 
 if __name__ == '__main__':
     main()
