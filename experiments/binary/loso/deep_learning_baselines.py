@@ -295,7 +295,7 @@ def main():
                         choices=['MLP', 'LSTM', 'Transformer', 'CNN'], required=True)
     parser.add_argument('--gpu-id', type=int, default=None,
         help='物理卡号，如 2；不指定则用默认映射（MLP:0/LSTM:1/Transformer:2/CNN:3）')
-    parser.add_argument('--epochs', type=int, default=1500)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--window-size', type=int, default=240)
     parser.add_argument('--overlap', type=float, default=0.0)
