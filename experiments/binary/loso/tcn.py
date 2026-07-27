@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+
 # ------------------------------------------------------
 # TCN 模型（来自你提供的原代码，保持一致）
 # ------------------------------------------------------
@@ -200,25 +201,25 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=str, required=True,
                         help="原眼动 CSV 根目录")
-    parser.add_argument("--base", type=str, default="Binary_LOSO_68/FINAL_TCN/tcn_2/tcn_MCI")
+    parser.add_argument("--base", type=str, default="Binary_LOSO_68/FINAL_TCN/tcn_2")
     args = parser.parse_args()
 
     # 三个模型及其对应的测试集
     model_configs = [
         {
-            "name": "MCI_06",
+            "name": "MCI_01",
             "model_path": os.path.join(args.base, "subj_MCI_06/best.pth"),
-            "test_subjects": [("MCI", "06")]  # 只测试MCI_06
+            "test_subjects": [("MCI", "01")] 
         },
         {
-            "name": "HC_06", 
+            "name": "HC_01", 
             "model_path": os.path.join(args.base, "subj_HC_06/best.pth"),
-            "test_subjects": [("HC", "06")]  # 只测试HC_06
+            "test_subjects": [("HC", "01")] 
         },
         {
-            "name": "ALL_06",
+            "name": "ALL_01",
             "model_path": os.path.join(args.base, "subj_ALL_06/best.pth"),
-            "test_subjects": [("MCI", "06"), ("HC", "06")]  # 测试MCI_06和HC_06
+            "test_subjects": [("MCI", "01")]
         }
     ]
 
