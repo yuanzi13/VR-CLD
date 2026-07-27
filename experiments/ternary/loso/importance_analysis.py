@@ -42,7 +42,7 @@ STAGE_LABEL = [('1', 0), ('2', 1), ('3', 2), ('4', 2)]
 CLASS_NAMES = {0: 'LCL', 1: 'MCL', 2: 'HCL'}
 
 # ------------------------ Grad-CAM 特征重要性 ------------------------
-def gradient-based input attribution(model, device, test_loader, feature_names, out_dir):
+def gradient_input_attribution(model, device, test_loader, feature_names, out_dir):
     model.eval()
     model.to(device)
     feat_importance = np.zeros(len(feature_names))
@@ -467,7 +467,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
     labels_arr = np.array(labels_collect) if labels_collect else None
 
     # ===================== 特征重要性 =====================
-    fold_feat_score = gradient-based input attribution(model, device, test_loader, REQUIRED_COLUMNS, fold_dir)
+    fold_feat_score = gradient_input_attribution(model, device, test_loader, REQUIRED_COLUMNS, fold_dir)
     return np.array(y_true), np.array(y_pred), np.array(y_prob), feats_arr, labels_arr, fold_feat_score
 
 # ------------------------ 比较 ROC ------------------------
