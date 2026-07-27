@@ -425,7 +425,7 @@ def main():
             y_true, y_pred, y_prob = [], [], []
             feats_fold, labs_fold = [], []
             with torch.no_grad():
-                for xb, yb in val_loader:
+                for xb, yb in test_loader:
                     xb = xb.to(device)
                     logits = model(xb)                               # (B, 3)
                     prob = torch.softmax(logits, dim=1).cpu().numpy()
