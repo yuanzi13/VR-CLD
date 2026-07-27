@@ -414,7 +414,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader,
     model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     crit = nn.CrossEntropyLoss()
-    early = EarlyStopper(patience=patience, min_delta=min_delta, maximize=True)
+    early = EarlyStopper(patience=patience, min_delta=min_delta, maximize=False)
 
     history = {'epoch': [], 'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_path = os.path.join(out_dir, 'best.pth')
@@ -514,14 +514,13 @@ def run_fold(model, device, train_loader, val_loader, test_loader,
     feats_arr = np.vstack(feat_list) if feat_list else None
     labels_arr = np.array(lab_list) if lab_list else None
 
-    gradient_input_attribution(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
     # 每折 t-SNE
     if feats_arr is not None and labels_arr.size > 0:
         plot_tsne(feats_arr, labels_arr, os.path.join(out_dir, "tsne.png"),
                   title="t-SNE (Test, best model)", dpi=300)
 
         # 计算单折特征重要性
-    fold_feat_score = gradient-based input attribution(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
+    fold_feat_score = gradient_input_attribution(model, device, test_loader, REQUIRED_COLUMNS, out_dir)
 
     # 每折 t-SNE
     if feats_arr is not None and labels_arr.size > 0:
