@@ -420,7 +420,7 @@ class TCN(nn.Module):
 
 # ------------------------ 提前停止 ------------------------
 class EarlyStopper:
-    def __init__(self, patience=10, min_delta=0.0):
+    def __init__(self, patience=80, min_delta=0.0):
         self.patience = patience
         self.min_delta = min_delta
         self.best = None
@@ -590,13 +590,13 @@ def main():
     parser.add_argument('--overlap', type=float, default=0.0)
 
     # 训练超参
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--weight-decay', type=float, default=1e-4)
 
     # 早停
-    parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--patience', type=int, default=80)
     parser.add_argument('--min-delta', type=float, default=0.0)
 
     # TCN 架构
