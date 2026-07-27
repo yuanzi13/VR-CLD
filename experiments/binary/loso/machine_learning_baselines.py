@@ -219,7 +219,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-root', type=str, default=os.path.join('DeepLearning','data_rml'))
     parser.add_argument('--result-dir', type=str, default='Binary_LOSO_68')   # ← 改为 LOSO 目录
-    parser.add_argument('--models', default='nb,svm,knn,dt,rf,ab', help="nb,svm,knn,dt,rf,ab 或 all")
+    parser.add_argument('--models', default='svm,knn,dt', help='svm,knn,dt')
     parser.add_argument('--datasets', default='MCI,HC,ALL', help="MCI,HC,ALL（逗号分隔）")
     parser.add_argument('--random_state', type=int, default=42)
     parser.add_argument('--n_jobs', type=int, default=-1)
@@ -320,10 +320,31 @@ def main():
                     else:
                         prob = np.full(len(Yte), 0.5)
 
-                acc = accuracy_score(Yte, pred)
-                rec = recall_score(y_true, y_pred, average='macro', zero_division=0)
-                pre = precision_score(Yte, pred, zero_division=0)
-                f1s = f1_score(Yte, pred, zero_division=0)
+               acc = accuracy_score(Yte, pred)
+                
+                rec = recall_score(
+                    Yte,
+                    pred,
+                    average='binary',
+                    pos_label=1,
+                    zero_division=0
+                )
+                
+                pre = precision_score(
+                    Yte,
+                    pred,
+                    average='binary',
+                    pos_label=1,
+                    zero_division=0
+                )
+                
+                f1s = f1_score(
+                    Yte,
+                    pred,
+                    average='binary',
+                    pos_label=1,
+                    zero_division=0
+                )
                 try:
                     auc = roc_auc_score(Yte, prob)
                 except Exception:
@@ -362,10 +383,12 @@ def main():
                 except Exception:
                     oauc = 0.0
 
-                otxt = (f"{dtype} {key.UPPER()} Overall\n"
-                        f"Acc={oa:.4f}  Rec={orc:.4f}\n"
-                        f"Pre={opc:.4f}  F1={of1:.4f}\n"
-                        f"AUC={oauc:.4f}")
+                otxt = (
+                    f"{dtype} {key.upper()} Overall\n"
+                    f"Acc={oa:.4f}  Rec={orc:.4f}\n"
+                    f"Pre={opc:.4f}  F1={of1:.4f}\n"
+                    f"AUC={oauc:.4f}"
+                )
                 plot_confusion_matrix(total_conf, oa, len(y_t_all), otxt,
                                       os.path.join(res_dir, "confusion_overall.png"))
                 plot_roc_safe(y_t_all, y_pr_all, f"{dtype} {key.upper()} Overall ROC",
