@@ -350,7 +350,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader,
     model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     crit = nn.CrossEntropyLoss()
-    early = EarlyStopper(patience=patience, min_delta=min_delta, maximize=True)
+    early = EarlyStopper(patience=patience, min_delta=min_delta, maximize=False)
 
     history = {'epoch': [], 'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_path = os.path.join(out_dir, 'best.pth')
