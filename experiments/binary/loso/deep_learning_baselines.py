@@ -369,14 +369,38 @@ def main():
 
             # 标准化：扁平 -> 标准化 -> 还原为 (B, seq, feat)
             feat_dim, seq_len = Xtr.shape[1], Xtr.shape[2]
+
             scaler = StandardScaler()
-            Xtr_flat = Xtr.view(len(Xtr), -1).numpy()
-            Xte_flat = Xte.view(len(Xte), -1).numpy()
+
+            # 保持原有标准化方式：先将每个窗口展平。
+            Xtr_flat = Xtr.reshape(len(Xtr), -1).numpy()
+            Xte_flat = Xte.reshape(len(Xte), -1).numpy()
+
             scaler.fit(Xtr_flat)
             Xtr_flat = scaler.transform(Xtr_flat)
             Xte_flat = scaler.transform(Xte_flat)
-            Xtr = torch.tensor(Xtr_flat, dtype=torch.float32).view(-1, seq_len, feat_dim)
-            Xte = torch.tensor(Xte_flat, dtype=torch.float32).view(-1, seq_len, feat_dim)
+
+            # 先正确还原成 (B, C, T)，再交换为模型需要的 (B, T, C)。
+            Xtr = (
+                torch.tensor(Xtr_flat, dtype=torch.float32)
+                .view(-1, feat_dim, seq_len)
+                .permute(0, 2, 1)
+                .contiguous()
+            )
+
+            Xte = (
+                torch.tensor(Xte_flat, dtype=torch.float32)
+                .view(-1, feat_dim, seq_len)
+                .permute(0, 2, 1)
+                .contiguous()
+            )
+
+            assert Xtr.shape[1:] == (seq_len, feat_dim), (
+                f"Unexpected training shape: {tuple(Xtr.shape)}"
+            )
+            assert Xte.shape[1:] == (seq_len, feat_dim), (
+                f"Unexpected test shape: {tuple(Xte.shape)}"
+            )
 
             # 2) 训练/验证划分
             dataset = TensorDataset(Xtr, Ytr)
