@@ -241,7 +241,7 @@ def plot_acc_curve(accs, labels, save_path):
 
 # ------------------------ 训练可视化曲线 & 早停 ------------------------
 class EarlyStopper:
-    def __init__(self, patience=10, min_delta=0.0, maximize=True):
+    def __init__(self, patience=10, min_delta=0.0, maximize=False):
         self.patience = patience
         self.min_delta = min_delta
         self.maximize = maximize
