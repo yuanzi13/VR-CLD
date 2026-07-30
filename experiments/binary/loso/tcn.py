@@ -130,22 +130,50 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--deterministic",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+        dest="deterministic",
+        action="store_true",
         help="Use deterministic PyTorch operations when available.",
     )
     parser.add_argument(
+        "--no-deterministic",
+        dest="deterministic",
+        action="store_false",
+        help="Disable deterministic PyTorch operations.",
+    )
+
+    # t-SNE defaults to False.
+    parser.add_argument(
         "--tsne",
-        action=argparse.BooleanOptionalAction,
-        default=False,
+        dest="tsne",
+        action="store_true",
         help="Create a t-SNE plot for each held-out subject.",
     )
+    parser.add_argument(
+        "--no-tsne",
+        dest="tsne",
+        action="store_false",
+        help="Do not create t-SNE plots.",
+    )
     parser.add_argument("--tsne-max-points", type=int, default=3000)
+
+    # Strict column checking defaults to True.
     parser.add_argument(
         "--strict-columns",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+        dest="strict_columns",
+        action="store_true",
         help="Reject files missing any of the 17 required channels.",
+    )
+    parser.add_argument(
+        "--no-strict-columns",
+        dest="strict_columns",
+        action="store_false",
+        help="Allow files with missing required channels.",
+    )
+
+    parser.set_defaults(
+        deterministic=True,
+        tsne=False,
+        strict_columns=True,
     )
     parser.add_argument(
         "--expected-mci",
