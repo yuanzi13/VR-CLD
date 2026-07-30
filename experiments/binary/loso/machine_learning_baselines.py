@@ -320,7 +320,7 @@ def main():
                     else:
                         prob = np.full(len(Yte), 0.5)
 
-               acc = accuracy_score(Yte, pred)
+                acc = accuracy_score(Yte, pred)
                 
                 rec = recall_score(
                     Yte,
