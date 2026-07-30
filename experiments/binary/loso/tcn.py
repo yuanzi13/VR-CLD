@@ -1,23 +1,3 @@
-#!/usr/bin/env python3
-"""Binary TCN with leave-one-subject-out (LOSO) evaluation.
-
-Expected data layout
---------------------
-<data_root>/MCI/{1,2,3,4}/<subject_id>.csv
-<data_root>/HC/{1,2,3,4}/<subject_id>.csv
-
-Binary labels
--------------
-Stages 1 and 2 -> LCL (0)
-Stages 3 and 4 -> HCL (1)
-
-The held-out subject is excluded before validation splitting, scaler fitting,
-model training, and early stopping. Standardization is fitted on the inner
-training subset only. The script writes fold-level checkpoints, histories,
-predictions, metrics, confusion matrices, ROC curves, and optional per-fold
-t-SNE plots.
-"""
-
 from __future__ import annotations
 
 import argparse
