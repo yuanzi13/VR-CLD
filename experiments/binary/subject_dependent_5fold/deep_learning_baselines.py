@@ -1579,7 +1579,7 @@ def main() -> None:
                 "3": "HCL (1)",
                 "4": "HCL (1)",
             },
-            "primary_positive_class": "HCL (0)",
+            "primary_positive_class": "HCL (1)",
             "auc_positive_class": "HCL (1)",
             "python_version": sys.version,
             "torch_version": torch.__version__,
