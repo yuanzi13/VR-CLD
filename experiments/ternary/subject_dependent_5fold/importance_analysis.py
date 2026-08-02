@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, random_split
 from sklearn.preprocessing import StandardScaler, label_binarize
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     confusion_matrix, accuracy_score, precision_score,
     recall_score, f1_score, roc_curve, auc, roc_auc_score
