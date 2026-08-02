@@ -605,10 +605,6 @@ def main():
             if not Xtr_list or not Xte_list:
                 print(f"⚠️ Fold {k+1} 数据不足，跳过"); continue
 
-            # 扁平 → 标准化 → 还原成 (B, C, W)
-            Xtr_flat = np.vstack([x.numpy() for x in Xtr_list])
-            Xte_flat = np.vstack([x.numpy() for x in Xte_list])
-            Ytr = np.array(Ytr_list, dtype=np.int64); Yte = np.array(Yte_list, dtype=np.int64)
 
             # 外层训练集和外层测试集，此时均未标准化
             Xtr_flat = np.vstack([x.numpy() for x in Xtr_list])  # (N_train, C*W)
