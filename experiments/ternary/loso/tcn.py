@@ -40,7 +40,7 @@ REQUIRED_COLUMNS = [
 # 1 → 0，2 → 1，3/4 → 2
 STAGE_LABEL = [('1', 0), ('2', 1), ('3', 2), ('4', 2)]
 # 类别名称映射（用于 t-SNE 图例与说明）
-CLASS_NAMES = {0: 'LCL', 1: 'MCL', 2: 'HCL'}  # note: user requested 0=LCL;1=HCL in t-SNE labeling
+CLASS_NAMES = {0: 'LCL', 1: 'MCL', 2: 'HCL'}  
 
 # ------------------------ 工具函数 ------------------------
 def windowize_from_array(arr_ch_t: np.ndarray, label: int, window_size: int = 240, overlap: float = 0.0):
@@ -468,12 +468,9 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
 
     return np.array(y_true), np.array(y_pred), np.array(y_prob), feats_arr, labels_arr
 
-# ------------------------ 比较 ROC（binary LCL vs HCL） ------------------------
-def plot_binary_roc_compare(entries, save_path, title="LCL vs HCL ROC Comparison"):
-    """
-    entries: list of tuples (name, y_true_multi, y_prob_multi)
-    对每项会筛选 y_true != 1（剔除 MCL），并以 prob[:,2] 作为 HCL 的概率（正类）
-    """
+# ------------------------ 比较 ROC ------------------------
+def plot_binary_roc_compare(entries, save_path, title="ROC Comparison"):
+
     plt.figure(figsize=(6.4,6.0))
     colors = ['#1f77b4', '#2ca02c', '#d62728', '#9467bd']
     plotted = 0
@@ -483,7 +480,7 @@ def plot_binary_roc_compare(entries, save_path, title="LCL vs HCL ROC Comparison
         # 仅保留 LCL(0) 与 HCL(2)
         mask = (y_true_all == 0) | (y_true_all == 2)
         if mask.sum() == 0:
-            print(f"  ⚠️ {name} 在比较 ROC 时没有 LCL/HCL 样本，跳过")
+            print(f"  ⚠️ {name} 在比较 ROC 时没有样本，跳过")
             continue
         y_true_bin = (y_true_all[mask] == 2).astype(int)  # 1 表示 HCL
         # 取 HCL 的概率（原 prob 对应 class index 2）
@@ -501,7 +498,7 @@ def plot_binary_roc_compare(entries, save_path, title="LCL vs HCL ROC Comparison
         except Exception as e:
             print(f"  ⚠️ {name} ROC 绘制失败: {e}")
     if plotted == 0:
-        print("  ⚠️ 没有任何组满足 LCL/HCL 比较条件，未绘制比较 ROC。")
+        print("  ⚠️ 没有任何组满足比较条件，未绘制比较 ROC。")
         return
     plt.plot([0,1],[0,1],'k--', lw=1)
     plt.xlabel('False Positive Rate'); plt.ylabel('True Positive Rate')
@@ -596,7 +593,7 @@ def main():
     chan_list = [int(x) for x in args.channels.split(',') if x.strip()]
     num_classes = 3
 
-    # 收集三组 overall 的 LCL/HCL 用于比较 ROC（entries 为 list of (name, y_true_all, y_prob_all)）
+    # 收集三组 overall 的用于比较 ROC（entries 为 list of (name, y_true_all, y_prob_all)）
     compare_entries = []
 
     for dtype in datasets_req:
@@ -735,7 +732,7 @@ def main():
                 include_micro=False
             )
 
-            # 将本组 overall 的 multi-class truth/prob 保存到比较队列（用于 LCL vs HCL 比较）
+            # 将本组 overall 的 multi-class truth/prob 保存到比较队列
             compare_entries.append((dtype, np.array(y_t_all), np.array(y_pr_all)))
 
         # ===== Overall t-SNE =====
@@ -746,13 +743,13 @@ def main():
                       save_path=os.path.join(res_dir, "tsne_overall.png"),
                       title=f"{dtype} TCN LOSO Overall t-SNE", dpi=300)
 
-    # ===== 三组比较 ROC（仅 LCL vs HCL） =====
+    # ===== 三组比较 ROC =====
     # entries 格式 (name, y_true_multi, y_prob_multi)
     if compare_entries:
         # 输出到 result-dir 根下一个对比图
-        comp_save = os.path.join(args.result_dir, "roc_compare_LCL_vs_HCL.png")
-        plot_binary_roc_compare(compare_entries, comp_save, title="LCL vs HCL ROC: MCI / HC / ALL")
-        print(f"Saved comparison ROC (LCL vs HCL) to: {comp_save}")
+        comp_save = os.path.join(args.result_dir, "roc_compare_CL.png")
+        plot_binary_roc_compare(compare_entries, comp_save, title="ROC: MCI / HC / ALL")
+        print(f"Saved comparison ROC to: {comp_save}")
     else:
         print("No overall entries collected for ROC comparison across groups.")
 
