@@ -772,9 +772,9 @@ def plot_confusion_summary(
 
     summary = (
         "ACC={accuracy:.4f}\n"
-        "PRE(LCL)={precision:.4f}\n"
-        "REC(LCL)={recall:.4f}\n"
-        "F1(LCL)={f1:.4f}\n"
+        "PRE(HCL)={precision:.4f}\n"
+        "REC(HCL)={recall:.4f}\n"
+        "F1(HCL)={f1:.4f}\n"
         "AUC(HCL)={auc:.4f}"
     ).format(**metrics)
     figure.text(
