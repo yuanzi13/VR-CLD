@@ -139,7 +139,7 @@ def preprocess(index, path_to_folders, info_path):
                     df_s.drop(columns=['cognitiveLoadValue'], inplace = True)
                 if'cognitiveLoad' in df_s.columns:
                     df_s.drop(columns=['cognitiveLoad'], inplace = True)
-                if'standardDeviation' and 'dataState' in df_s.columns:
+                if {'standardDeviation', 'dataState'}.issubset(df_s.columns):
                     df_s.drop(columns=['standardDeviation', 'dataState'], inplace = True)
                 # 查找包含 'confidence' 的列
                 columns_to_drop = df_s.filter(like='confidence').columns
