@@ -3,8 +3,7 @@ A virtual reality-based cognitive load classification framework for older adults
 using eye-tracking signals.
 
 Due to ethical restrictions, raw participant data cannot be publicly released. 
-A synthetic example dataset is provided to demonstrate the data format and 
-preprocessing pipeline.
+Sample  data is provided to demonstrate the data format.
 ## License
 
 This project is released under the MIT License.
