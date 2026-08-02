@@ -33,10 +33,10 @@ def Interpolate_blink(df):
 def save_to_folder(df, i, is_have_heartrate, label, file, index, type):
     df = df.copy()
     folder_name = ['Data', 'Feature']
-    save_to_path_WH_HC = f'/public/home/seu_test3/RML/{folder_name[type]}/WH/HC/'
-    save_to_path_WH_MCI = f'/public/home/seu_test3/RML/{folder_name[type]}/WH/MCI/'
-    save_to_path_WOH_HC = f'/public/home/seu_test3/RML/{folder_name[type]}/WOH/HC/'
-    save_to_path_WOH_MCI = f'/public/home/seu_test3/RML/{folder_name[type]}/WOH/MCI/'
+    save_to_path_WH_HC = f'/RML/{folder_name[type]}/WH/HC/'
+    save_to_path_WH_MCI = f'/RML/{folder_name[type]}/WH/MCI/'
+    save_to_path_WOH_HC = f'/RML/{folder_name[type]}/WOH/HC/'
+    save_to_path_WOH_MCI = f'/RML/{folder_name[type]}/WOH/MCI/'
     
 
     
