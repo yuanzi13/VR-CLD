@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, random_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     confusion_matrix, accuracy_score, precision_score,
     recall_score, f1_score, roc_auc_score, roc_curve
@@ -522,30 +523,80 @@ def main():
             print(f"[TCN][{dtype}] Fold {k+1}/5 | train={len(Ytr_list)} windows, test={len(Yte_list)} windows")
             if not Xtr_list or not Xte_list:
                 print(f"⚠️ Fold {k+1} 数据不足，跳过"); continue
+            # ============================================================
 
-            # 扁平 → 标准化 → 还原成 (B, C, W) 喂 TCN
-            Xtr_flat = np.vstack([x.numpy() for x in Xtr_list])   # (N, C*W)
-            Xte_flat = np.vstack([x.numpy() for x in Xte_list])
-            Ytr = np.array(Ytr_list, dtype=np.int64); Yte = np.array(Yte_list, dtype=np.int64)
+            Xtr_flat = np.vstack([x.numpy() for x in Xtr_list])  # (N_train, C*W)
+            Xte_flat = np.vstack([x.numpy() for x in Xte_list])  # (N_test, C*W)
+            
+            Ytr = np.asarray(Ytr_list, dtype=np.int64)
+            Yte = np.asarray(Yte_list, dtype=np.int64)
+            
+            all_indices = np.arange(len(Ytr))
+                       
+            _, class_counts = np.unique(Ytr, return_counts=True)
+            stratify_labels = Ytr if np.all(class_counts >= 2) else None
+            
+            train_idx, val_idx = train_test_split(
+                all_indices,
+                test_size=args.val_ratio,
+                random_state=42 + k,
+                shuffle=True,
+                stratify=stratify_labels
+            )
+            
+            Xtrain_flat = Xtr_flat[train_idx]
+            Xval_flat = Xtr_flat[val_idx]
+            
+            Ytrain = Ytr[train_idx]
+            Yval = Ytr[val_idx]
+       
+            scaler = StandardScaler()
+            Xtrain_s = scaler.fit_transform(Xtrain_flat).reshape(-1, C, W)
 
-            scaler = StandardScaler().fit(Xtr_flat)
-            Xtr_s = scaler.transform(Xtr_flat).reshape(-1, C, W)
+            Xval_s = scaler.transform(Xval_flat).reshape(-1, C, W)
             Xte_s = scaler.transform(Xte_flat).reshape(-1, C, W)
 
-            Xtr_tensor = torch.tensor(Xtr_s, dtype=torch.float32)
+            Xtrain_tensor = torch.tensor(Xtrain_s, dtype=torch.float32)
+            Xval_tensor = torch.tensor(Xval_s, dtype=torch.float32)
             Xte_tensor = torch.tensor(Xte_s, dtype=torch.float32)
-            Ytr_tensor = torch.tensor(Ytr, dtype=torch.long)
+            
+            Ytrain_tensor = torch.tensor(Ytrain, dtype=torch.long)
+            Yval_tensor = torch.tensor(Yval, dtype=torch.long)
             Yte_tensor = torch.tensor(Yte, dtype=torch.long)
+            
 
-            # —— 划分训练/验证 —— #
-            full_ds = TensorDataset(Xtr_tensor, Ytr_tensor)
-            n_val = max(1, int(args.val_ratio * len(full_ds)))
-            n_trn = max(1, len(full_ds) - n_val)
-            trn_ds, val_ds = random_split(full_ds, [n_trn, n_val], generator=torch.Generator().manual_seed(42))
-
-            train_loader = DataLoader(trn_ds, batch_size=args.batch_size, shuffle=True)
-            val_loader   = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
-            test_loader  = DataLoader(TensorDataset(Xte_tensor, Yte_tensor), batch_size=args.batch_size, shuffle=False)
+            trn_ds = TensorDataset(Xtrain_tensor, Ytrain_tensor)
+            val_ds = TensorDataset(Xval_tensor, Yval_tensor)
+            test_ds = TensorDataset(Xte_tensor, Yte_tensor)
+            
+            # 固定训练数据加载顺序，提高可复现性
+            loader_generator = torch.Generator().manual_seed(42 + k)
+            
+            train_loader = DataLoader(
+                trn_ds,
+                batch_size=args.batch_size,
+                shuffle=True,
+                generator=loader_generator
+            )
+            
+            val_loader = DataLoader(
+                val_ds,
+                batch_size=args.batch_size,
+                shuffle=False
+            )
+            
+            test_loader = DataLoader(
+                test_ds,
+                batch_size=args.batch_size,
+                shuffle=False
+            )
+            
+            print(
+                f"[Split][{dtype}][Fold {k + 1}] "
+                f"inner_train={len(Ytrain)}, "
+                f"validation={len(Yval)}, "
+                f"outer_test={len(Yte)}"
+            )
 
             model = TCN(in_channels=C, num_classes=2,
             channels=chan_list, kernel_size=args.kernel_size,
