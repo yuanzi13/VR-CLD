@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     confusion_matrix, accuracy_score, precision_score,
     recall_score, f1_score, roc_auc_score
@@ -11,7 +12,7 @@ from sklearn.metrics import (
 from sklearn.manifold import TSNE
 import torch
 import torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader, random_split
+from torch.utils.data import TensorDataset, DataLoader
 import matplotlib
 matplotlib.use("Agg")  # 无显示环境
 import matplotlib.pyplot as plt
@@ -447,27 +448,155 @@ def main():
             Ytr = torch.tensor(Ytr_list, dtype=torch.long)
             Yte = torch.tensor(Yte_list, dtype=torch.long)
 
-            seq_len, feat_dim = Xtr.shape[1], Xtr.shape[2]
-
-            # 标准化（按训练集）
+            # 当前Xtr/Xte形状为(B, T, C)
+            seq_len = Xtr.shape[1]
+            feat_dim = Xtr.shape[2]
+            
+            Xtr_flat = (
+                Xtr.reshape(len(Xtr), -1)
+                .cpu()
+                .numpy()
+            )
+            
+            Xte_flat = (
+                Xte.reshape(len(Xte), -1)
+                .cpu()
+                .numpy()
+            )
+            
+            Ytr_np = Ytr.cpu().numpy()
+            Yte_np = Yte.cpu().numpy()
+            
+            if len(Ytr_np) <= 1:
+                print("训练样本过少，跳过此折")
+                continue
+            
+            all_indices = np.arange(len(Ytr_np))
+            
+            classes, class_counts = np.unique(
+                Ytr_np,
+                return_counts=True
+            )
+            
+            validation_ratio = 0.1
+            n_validation = int(
+                np.ceil(len(Ytr_np) * validation_ratio)
+            )
+            
+            can_stratify = (
+                len(classes) > 1
+                and np.all(class_counts >= 2)
+                and n_validation >= len(classes)
+                and (len(Ytr_np) - n_validation) >= len(classes)
+            )
+            
+            stratify_labels = (
+                Ytr_np if can_stratify else None
+            )
+            
+            train_idx, val_idx = train_test_split(
+                all_indices,
+                test_size=validation_ratio,
+                random_state=42 + k,
+                shuffle=True,
+                stratify=stratify_labels
+            )
+            
+            Xtrain_flat = Xtr_flat[train_idx]
+            Xval_flat = Xtr_flat[val_idx]
+            
+            Ytrain = Ytr_np[train_idx]
+            Yval = Ytr_np[val_idx]
+            
             scaler = StandardScaler()
-            Xtr_flat = Xtr.reshape(len(Xtr), -1).numpy()
-            Xte_flat = Xte.reshape(len(Xte), -1).numpy()
-            scaler.fit(Xtr_flat)
-            Xtr = torch.tensor(scaler.transform(Xtr_flat), dtype=torch.float32).view(-1, seq_len, feat_dim)
-            Xte = torch.tensor(scaler.transform(Xte_flat), dtype=torch.float32).view(-1, seq_len, feat_dim)
-
-            # 训练/验证划分（仅用于早停/挑最佳）
-            dataset = TensorDataset(Xtr, Ytr)
-            if len(dataset) <= 1:
-                print("训练样本过少，跳过此折"); continue
-            n_val = max(1, int(0.1 * len(dataset)))
-            n_train = len(dataset) - n_val
-            if n_train == 0: n_train, n_val = 1, len(dataset) - 1
-            train_ds, val_ds = random_split(dataset, [n_train, n_val])
-            train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-            val_loader   = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
-            test_loader  = DataLoader(TensorDataset(Xte, Yte), batch_size=args.batch_size, shuffle=False)
+            
+            Xtrain_scaled = scaler.fit_transform(
+                Xtrain_flat
+            )
+            
+            Xval_scaled = scaler.transform(
+                Xval_flat
+            )
+            
+            Xtest_scaled = scaler.transform(
+                Xte_flat
+            )
+            
+            Xtrain_tensor = torch.tensor(
+                Xtrain_scaled,
+                dtype=torch.float32
+            ).view(-1, seq_len, feat_dim)
+            
+            Xval_tensor = torch.tensor(
+                Xval_scaled,
+                dtype=torch.float32
+            ).view(-1, seq_len, feat_dim)
+            
+            Xtest_tensor = torch.tensor(
+                Xtest_scaled,
+                dtype=torch.float32
+            ).view(-1, seq_len, feat_dim)
+            
+            Ytrain_tensor = torch.tensor(
+                Ytrain,
+                dtype=torch.long
+            )
+            
+            Yval_tensor = torch.tensor(
+                Yval,
+                dtype=torch.long
+            )
+            
+            Ytest_tensor = torch.tensor(
+                Yte_np,
+                dtype=torch.long
+            )
+            
+            train_ds = TensorDataset(
+                Xtrain_tensor,
+                Ytrain_tensor
+            )
+            
+            val_ds = TensorDataset(
+                Xval_tensor,
+                Yval_tensor
+            )
+            
+            test_ds = TensorDataset(
+                Xtest_tensor,
+                Ytest_tensor
+            )
+            
+            loader_generator = (
+                torch.Generator()
+                .manual_seed(42 + k)
+            )
+            
+            train_loader = DataLoader(
+                train_ds,
+                batch_size=args.batch_size,
+                shuffle=True,
+                generator=loader_generator
+            )
+            
+            val_loader = DataLoader(
+                val_ds,
+                batch_size=args.batch_size,
+                shuffle=False
+            )
+            
+            test_loader = DataLoader(
+                test_ds,
+                batch_size=args.batch_size,
+                shuffle=False
+            )
+            
+            print(
+                f"[Split][{subname}][Fold {k + 1}] "
+                f"inner_train={len(Ytrain)}, "
+                f"validation={len(Yval)}, "
+                f"outer_test={len(Yte_np)}"
+            )
 
             # 模型/优化器/损失
             model = build_model(feat_dim, seq_len)
