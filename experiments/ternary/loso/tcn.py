@@ -99,7 +99,7 @@ def build_loso_subject_windows(data_root, subjects, window_size, overlap):
             subj_data[(pop, num)] = {'X': X_subj, 'Y': Y_subj}
 
     # 调试统计
-    for key, v in subj_data.items():
+    for fold_idx, key in enumerate(valid_keys):
         pop, num = key
         yk = np.array(v['Y'])
         cnt = dict(zip(*np.unique(yk, return_counts=True))) if yk.size > 0 else {}
@@ -515,6 +515,12 @@ def main():
     parser.add_argument('--result-dir', type=str, default='triple_LOSO_68/TCN3')
     parser.add_argument('--datasets', default='MCI,HC,ALL', help="MCI,HC,ALL（逗号分隔）")
     parser.add_argument('--window-size', type=int, default=240)
+    parser.add_argument(
+    '--val-ratio',
+    type=float,
+    default=0.1,
+    help='Fraction of outer-training windows used for inner validation.'
+)
     parser.add_argument('--overlap', type=float, default=0.0)
 
     # 训练超参
@@ -535,7 +541,8 @@ def main():
     # 设备
     parser.add_argument('--gpu-id', type=int, default=None)
     args = parser.parse_args()
-        
+    if not 0.0 < args.val_ratio < 1.0:
+        raise ValueError("--val-ratio must satisfy 0 < val_ratio < 1.")    
     # 生成时间戳
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -642,14 +649,28 @@ def main():
             
             # 先在外层训练集中划分内部训练集和验证集
             all_indices = np.arange(len(Ytr))
+            # 在外层训练集内划分inner training和validation
+            classes, class_counts = np.unique(
+                Ytr,
+                return_counts=True
+            )
             
-            # 当各类别均至少有两个样本时进行分层划分
-            _, class_counts = np.unique(Ytr, return_counts=True)
-            stratify_labels = Ytr if np.all(class_counts >= 2) else None
+            n_validation = int(
+                np.ceil(len(Ytr) * args.val_ratio)
+            )
+            
+            can_stratify = (
+                len(classes) > 1
+                and np.all(class_counts >= 2)
+                and n_validation >= len(classes)
+                and (len(Ytr) - n_validation) >= len(classes)
+            )
+            
+            stratify_labels = Ytr if can_stratify else None
             
             train_idx, val_idx = train_test_split(
                 all_indices,
-                test_size=0.1,
+                test_size=args.val_ratio,
                 random_state=42 + fold_idx,
                 shuffle=True,
                 stratify=stratify_labels
