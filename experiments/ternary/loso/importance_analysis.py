@@ -593,26 +593,55 @@ def main():
             if not Xtr_list or not Xte_list:
                 print(f"⚠️ {pop}-{sid:02d} 数据不足，跳过"); continue
 
-            Xtr_flat = np.vstack([x.numpy() for x in Xtr_list])
-            Xte_flat = np.vstack([x.numpy() for x in Xte_list])
-            Ytr = np.array(Ytr_list, dtype=np.int64); Yte = np.array(Yte_list, dtype=np.int64)
-
-            scaler = StandardScaler().fit(Xtr_flat)
-            Xtr_s = scaler.transform(Xtr_flat).reshape(-1, C, W)
+            Xtrain_flat = Xtr_flat[train_idx]
+            Xval_flat = Xtr_flat[val_idx]
+            
+            Ytrain = Ytr[train_idx]
+            Yval = Ytr[val_idx]
+            
+            # 只允许在内部训练集上拟合标准化参数
+            scaler = StandardScaler()
+            Xtrain_s = scaler.fit_transform(Xtrain_flat).reshape(-1, C, W)
+            
+            # 验证集和外层测试集只能使用 transform
+            Xval_s = scaler.transform(Xval_flat).reshape(-1, C, W)
             Xte_s = scaler.transform(Xte_flat).reshape(-1, C, W)
-
-            Xtr_tensor = torch.tensor(Xtr_s, dtype=torch.float32)
+            
+            # 转换为 PyTorch Tensor
+            Xtrain_tensor = torch.tensor(Xtrain_s, dtype=torch.float32)
+            Xval_tensor = torch.tensor(Xval_s, dtype=torch.float32)
             Xte_tensor = torch.tensor(Xte_s, dtype=torch.float32)
-            Ytr_tensor = torch.tensor(Ytr, dtype=torch.long)
+            
+            Ytrain_tensor = torch.tensor(Ytrain, dtype=torch.long)
+            Yval_tensor = torch.tensor(Yval, dtype=torch.long)
             Yte_tensor = torch.tensor(Yte, dtype=torch.long)
-
-            full_ds = TensorDataset(Xtr_tensor, Ytr_tensor)
-            n_val = max(1, int(0.1*len(full_ds)))
-            n_trn = len(full_ds) - n_val
-            trn_ds, val_ds = random_split(full_ds, [n_trn, n_val], generator=torch.Generator().manual_seed(42))
-            train_loader = DataLoader(trn_ds, batch_size=args.batch_size, shuffle=True)
-            val_loader   = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
-            test_loader  = DataLoader(TensorDataset(Xte_tensor, Yte_tensor), batch_size=args.batch_size, shuffle=False)
+            
+            # 分别构建训练、验证和测试数据集
+            trn_ds = TensorDataset(Xtrain_tensor, Ytrain_tensor)
+            val_ds = TensorDataset(Xval_tensor, Yval_tensor)
+            test_ds = TensorDataset(Xte_tensor, Yte_tensor)
+            
+            # 固定训练数据加载顺序，提高可复现性
+            loader_generator = torch.Generator().manual_seed(42)
+            
+            train_loader = DataLoader(
+                trn_ds,
+                batch_size=args.batch_size,
+                shuffle=True,
+                generator=loader_generator
+            )
+            
+            val_loader = DataLoader(
+                val_ds,
+                batch_size=args.batch_size,
+                shuffle=False
+            )
+            
+            test_loader = DataLoader(
+                test_ds,
+                batch_size=args.batch_size,
+                shuffle=False
+            )
 
             model = TCN(in_channels=C, num_classes=num_classes,
                         channels=chan_list, kernel_size=args.kernel_size, dropout=args.dropout)
