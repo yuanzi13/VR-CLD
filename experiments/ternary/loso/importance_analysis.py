@@ -480,7 +480,7 @@ def plot_binary_roc_compare(entries, save_path, title="LCL vs HCL ROC Comparison
         y_prob_all = np.asarray(y_prob_all)
         mask = (y_true_all == 0) | (y_true_all == 2)
         if mask.sum() == 0:
-            print(f"  ⚠️ {name} 无 LCL/HCL 样本，跳过")
+            print(f"  ⚠️ {name} 无 样本，跳过")
             continue
         y_true_bin = (y_true_all[mask] == 2).astype(int)
         if y_prob_all.ndim == 2 and y_prob_all.shape[1] >= 3:
