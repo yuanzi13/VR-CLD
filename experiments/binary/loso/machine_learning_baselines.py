@@ -17,7 +17,8 @@ from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import (GridSearchCV,StratifiedKFold)
+from sklearn.pipeline import Pipeline
 
 # ------------------------ 全局显示设置 ------------------------
 rcParams['font.family'] = ['WenQuanYi Micro Hei']
@@ -294,31 +295,144 @@ def main():
                 Xtr = np.vstack([x.numpy() for x in Xtr_list])
                 Xte = np.vstack([x.numpy() for x in Xte_list])
                 Ytr = np.array(Ytr_list); Yte = np.array(Yte_list)
-
-                scaler = StandardScaler().fit(Xtr)
-                Xtr_s = scaler.transform(Xtr); Xte_s = scaler.transform(Xte)
-
+                
                 clf = make_classifier(key, args)
+                
                 if clf == 'KNN_CV':
-                    grid = {'n_neighbors': list(range(1, args.knn_max_k+1))}
-                    search = GridSearchCV(KNeighborsClassifier(), grid, cv=5, scoring='accuracy', n_jobs=args.n_jobs)
-                    search.fit(Xtr_s, Ytr)
+                    # --------------------------------------------------------
+                    # Scaler必须放进Pipeline：
+                    # 每个GridSearchCV内部折只在自身训练部分拟合Scaler
+                    # --------------------------------------------------------
+                
+                    _, class_counts = np.unique(
+                        Ytr,
+                        return_counts=True
+                    )
+                
+                    n_inner_splits = min(
+                        5,
+                        int(class_counts.min())
+                    )
+                
+                    if n_inner_splits < 2:
+                        print(
+                            f"⚠️ LOSO {fold_name}类别样本不足，"
+                            "无法执行KNN内部交叉验证，跳过"
+                        )
+                        continue
+                
+                    inner_cv = StratifiedKFold(
+                        n_splits=n_inner_splits,
+                        shuffle=True,
+                        random_state=args.random_state
+                    )
+                
+                    # 避免K大于某个内部训练折的样本数
+                    min_inner_train_size = (
+                        len(Ytr)
+                        - int(np.ceil(len(Ytr) / n_inner_splits))
+                    )
+                
+                    max_valid_k = min(
+                        args.knn_max_k,
+                        max(1, min_inner_train_size)
+                    )
+                
+                    knn_pipeline = Pipeline([
+                        (
+                            'scaler',
+                            StandardScaler()
+                        ),
+                        (
+                            'knn',
+                            KNeighborsClassifier()
+                        )
+                    ])
+                
+                    parameter_grid = {
+                        'knn__n_neighbors': list(
+                            range(1, max_valid_k + 1)
+                        )
+                    }
+                
+                    search = GridSearchCV(
+                        estimator=knn_pipeline,
+                        param_grid=parameter_grid,
+                        cv=inner_cv,
+                        scoring='accuracy',
+                        n_jobs=args.n_jobs,
+                        refit=True,
+                        error_score='raise'
+                    )
+                
+                    # 必须传入尚未预先标准化的Xtr
+                    search.fit(Xtr, Ytr)
+                
                     model = search.best_estimator_
-                    best_k = search.best_params_['n_neighbors']
-                    print(f"    → KNN 最佳 K={best_k}")
+                    best_k = search.best_params_[
+                        'knn__n_neighbors'
+                    ]
+                
+                    print(
+                        f"    → KNN最佳K={best_k}; "
+                        f"inner_cv={n_inner_splits}"
+                    )
+                
+                    Xtest_for_model = Xte
+                
                 else:
-                    model = clf.fit(Xtr_s, Ytr)
-
-                pred = model.predict(Xte_s)
+                    # 没有内部超参数搜索的模型，
+                    # 可以在完整外层训练集上拟合Scaler
+                    scaler = StandardScaler()
+                
+                    Xtr_scaled = scaler.fit_transform(
+                        Xtr
+                    )
+                
+                    Xte_scaled = scaler.transform(
+                        Xte
+                    )
+                
+                    model = clf.fit(
+                        Xtr_scaled,
+                        Ytr
+                    )
+                
+                    Xtest_for_model = Xte_scaled
+                
+                pred = model.predict(
+                    Xtest_for_model
+                )
+                
                 if hasattr(model, 'predict_proba'):
-                    prob = model.predict_proba(Xte_s)[:, 1]
-                else:
-                    if hasattr(model, 'decision_function'):
-                        scores = model.decision_function(Xte_s)
-                        mn, mx = scores.min(), scores.max()
-                        prob = (scores - mn) / (mx - mn + 1e-12)
+                    probability_output = model.predict_proba(
+                        Xtest_for_model
+                    )
+                
+                    if probability_output.ndim == 2:
+                        prob = probability_output[:, 1]
                     else:
-                        prob = np.full(len(Yte), 0.5)
+                        prob = probability_output
+                
+                elif hasattr(model, 'decision_function'):
+                    scores = model.decision_function(
+                        Xtest_for_model
+                    )
+                
+                    score_min = scores.min()
+                    score_max = scores.max()
+                
+                    prob = (
+                        (scores - score_min)
+                        / (score_max - score_min + 1e-12)
+                    )
+                
+                else:
+                    prob = np.full(
+                        len(Yte),
+                        0.5,
+                        dtype=float
+                    )
 
                 acc = accuracy_score(Yte, pred)
                 
