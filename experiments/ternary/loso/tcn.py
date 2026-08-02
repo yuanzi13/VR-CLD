@@ -393,7 +393,6 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
     model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     # crit = nn.CrossEntropyLoss()
-        # 权重：LCL(0) 和 HCL(2) 乘 2，MCL(1) 保持 1
     weight = torch.tensor([1.0, 1.0, 0.5], device=device)
     crit = nn.CrossEntropyLoss(weight=weight)
 
