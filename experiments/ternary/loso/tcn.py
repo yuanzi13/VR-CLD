@@ -99,11 +99,31 @@ def build_loso_subject_windows(data_root, subjects, window_size, overlap):
             subj_data[(pop, num)] = {'X': X_subj, 'Y': Y_subj}
 
     # 调试统计
-    for fold_idx, key in enumerate(valid_keys):
+    for key, value in subj_data.items():
         pop, num = key
-        yk = np.array(v['Y'])
-        cnt = dict(zip(*np.unique(yk, return_counts=True))) if yk.size > 0 else {}
-        print(f"[DEBUG] Subject {pop}-{num:02d}: 窗口={len(v['Y'])} | 标签计数={cnt}")
+    
+        y_subject = np.asarray(
+            value["Y"],
+            dtype=np.int64
+        )
+    
+        if y_subject.size > 0:
+            labels, counts = np.unique(
+                y_subject,
+                return_counts=True
+            )
+            count_dict = dict(
+                zip(labels.tolist(), counts.tolist())
+            )
+        else:
+            count_dict = {}
+    
+        print(
+            f"[DEBUG] Subject {pop}-{num:02d}: "
+            f"windows={len(value['Y'])} | "
+            f"label_counts={count_dict}"
+        )
+    
     return subj_data
 
 def plot_confusion_matrix(conf_mat, acc, total, side_txt, save_path):
