@@ -1433,7 +1433,7 @@ def run_model_dataset(
         "model": model_name,
         "dataset": dataset_name,
         "protocol": "subject-dependent sequential 5-fold",
-        "primary_positive_class": "HCL (label 0)",
+        "primary_positive_class": "HCL (label 1)",
         "auc_positive_class": "HCL (label 1)",
         "metrics": pooled_metrics,
         "confusion_matrix": pooled_matrix.tolist(),
