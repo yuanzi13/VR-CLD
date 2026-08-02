@@ -1,302 +1,400 @@
-import os
-import shutil
-import pandas as pd
-import numpy as np 
-import math
+import argparse
+import logging
+import re
 from pathlib import Path
-from sklearn import preprocessing
-from scipy import interpolate
-import matplotlib.pyplot as plt
+from typing import Dict, List, Sequence, Tuple
+
+import numpy as np
+import pandas as pd
 
 
-#将眨眼数据插值成正常数据但保留眨眼标志
-def Interpolate_blink(df):
-    df = df.copy()
-    leftEye_openness = df['leftEye_openness'].copy()
-    rightEye_openness = df['rightEye_openness'].copy()
-
-    #把瞳孔直径归-1作为眨眼标准
-    df.loc[df['leftEye_pupil_dilation'] < 2, :] = np.nan
-    df.loc[df['rightEye_pupil_dilation'] < 2, :] = np.nan
-    
-
-    # # 对所有列进行线性插值
-    df.ffill(inplace=True)
-    #对所有列进行线性插值
-    #df.interpolate(method='linear', inplace=True)
-    # 恢复保留列的数据
-    df['leftEye_openness'] = leftEye_openness
-    df['rightEye_openness'] = rightEye_openness
-    
-    return df
-
-def save_to_folder(df, i, is_have_heartrate, label, file, index, type):
-    df = df.copy()
-    folder_name = ['Data', 'Feature']
-    save_to_path_WH_HC = f'/RML/{folder_name[type]}/WH/HC/'
-    save_to_path_WH_MCI = f'/RML/{folder_name[type]}/WH/MCI/'
-    save_to_path_WOH_HC = f'/RML/{folder_name[type]}/WOH/HC/'
-    save_to_path_WOH_MCI = f'/RML/{folder_name[type]}/WOH/MCI/'
-    
-
-    
-    if(i==1): scene_name = 'A'
-    elif(i==2): scene_name = 'B'
-    elif(i==3): scene_name = 'C'
-    elif(i==4): scene_name = 'D'
-
-    if(is_have_heartrate):
-        if label == 0:
-            if(i==1): index[0] += 1
-            folder_path = os.path.join(save_to_path_WH_HC, f'HC S{index[0]} WH/')
-            # 文件夹路径不存在则自动创建
-            if not os.path.exists(folder_path):
-                os.makedirs(folder_path)
-            # 保存文件
-            df['SID'] = f'HC S{index[0]}'
-            df.to_csv(os.path.join(folder_path, f'{scene_name}.csv'), index=False)
-            print(os.path.join(folder_path, f'{scene_name}.csv'))
-            file.write(os.path.join(folder_path, f'{scene_name}.csv')+'\n')
-        elif label == 1:
-            if(i==1):index[1] += 1
-            folder_path = os.path.join(save_to_path_WH_MCI, f'MCI S{index[1]} WH/')
-            # 文件夹路径不存在则自动创建
-            if not os.path.exists(folder_path):
-                os.makedirs(folder_path)
-            # 保存文件
-            df['SID'] = f'MCI S{index[1]}'
-            df.to_csv(os.path.join(folder_path, f'{scene_name}.csv'), index=False)
-            print(os.path.join(folder_path, f'{scene_name}.csv'))
-            file.write(os.path.join(folder_path, f'{scene_name}.csv')+'\n')
-    else:
-        if label == 0:
-            if(i==1):index[2] += 1
-            folder_path = os.path.join(save_to_path_WOH_HC, f'HC S{index[2]} WOH/')
-            # 文件夹路径不存在则自动创建
-            if not os.path.exists(folder_path):
-                os.makedirs(folder_path)
-            # 保存文件
-            df.to_csv(os.path.join(folder_path, f'{scene_name}.csv'), index=False)
-            print(os.path.join(folder_path, f'{scene_name}.csv'))
-            file.write(os.path.join(folder_path, f'{scene_name}.csv')+'\n')
-        elif label == 1:
-            if(i==1):index[3] += 1
-            folder_path = os.path.join(save_to_path_WOH_MCI, f'MCI S{index[3]} WOH/')
-            # 文件夹路径不存在则自动创建
-            if not os.path.exists(folder_path):
-                os.makedirs(folder_path)
-            # 保存文件
-            df.to_csv(os.path.join(folder_path, f'{scene_name}.csv'), index=False)
-            print(os.path.join(folder_path, f'{scene_name}.csv'))
-            file.write(os.path.join(folder_path, f'{scene_name}.csv')+'\n')
+ET_COLUMNS: List[str] = [
+    "leftEye_gaze_X",
+    "leftEye_gaze_Y",
+    "leftEye_gaze_Z",
+    "leftEye_openness",
+    "leftEye_pupil_position_X",
+    "leftEye_pupil_position_Y",
+    "leftEye_pupil_dilation",
+    "rightEye_gaze_X",
+    "rightEye_gaze_Y",
+    "rightEye_gaze_Z",
+    "rightEye_openness",
+    "rightEye_pupil_position_X",
+    "rightEye_pupil_position_Y",
+    "rightEye_pupil_dilation",
+    "combinedEye_gaze_X",
+    "combinedEye_gaze_Y",
+    "combinedEye_gaze_Z",
+]
 
 
-#预处理数据
-def preprocess(index, path_to_folders, info_path):
-    
-    #默认为有心率数据
-    is_have_heartrate = True
-
-    result_txt = '/public/home/seu_test3/RML/result.txt'
-
-    for folder_name in os.listdir(path_to_folders):
-        folder_path = os.path.join(path_to_folders, folder_name)
-        file = open(result_txt, 'a+')
-        print(folder_name)
-        file.write(f'{folder_name}\n')
-        for i in range(1,5):
-            #处理任务文件task
-            print(f'第{i}个场景:')
-            file.write(f'第{i}个场景:\n')
-            csv_file_t=os.path.join(folder_path, f'cldata_{i}.csv')
-            csv_file_s=os.path.join(folder_path, f'sensordata{i}.csv')
-            if os.path.isfile(csv_file_t) & os.path.isfile(csv_file_s):
-                df_t = pd.read_csv(csv_file_t)
-                df_s = pd.read_csv(csv_file_s)
-                #删除记录时间的行
-                df_s = df_s[pd.notna(df_s['leftEye_openness'])]
-                #标记是否有心率数据,检查 heartRate 列中是否存在至少一个非空值
-                if df_s['heartRate'].notnull().any() and (df_s['heartRate'].fillna(0) != 0).any():
-                    is_have_heartrate = True
-                    print(f'{folder_name}的第{i}个场景有心率')
-                    file.write(f'{folder_name}的第{i}个场景有心率\n')
-                else:
-                    is_have_heartrate = False
-                    print(f'{folder_name}的第{i}个场景没有心率')
-                    file.write(f'{folder_name}的第{i}个场景没有心率\n')
-            
-                # 对有心率的数据，进行后向插值（前面会有一段没有心率）
-                if is_have_heartrate:
-                    # 使用向后填充方法填补缺失值
-                    df_s['heartRate'] = df_s['heartRate'].fillna(method='bfill')
-                else:
-                    df_s.drop(columns=['heartRate'], inplace = True)
-                #删除不需要的列
-                df_s.drop(columns=['heartRateVariability_Rmssd', 'heartRateVariability_Sndd'], inplace = True)
-                if 'time' in df_s.columns:
-                    df_s.drop(columns=['time'], inplace = True)
-                if 'cognitiveLoadValue' in df_s.columns:
-                    df_s.drop(columns=['cognitiveLoadValue'], inplace = True)
-                if'cognitiveLoad' in df_s.columns:
-                    df_s.drop(columns=['cognitiveLoad'], inplace = True)
-                if {'standardDeviation', 'dataState'}.issubset(df_s.columns):
-                    df_s.drop(columns=['standardDeviation', 'dataState'], inplace = True)
-                # 查找包含 'confidence' 的列
-                columns_to_drop = df_s.filter(like='confidence').columns
-                # 删除包含 'confidence' 的列
-                df_s = df_s.drop(columns=columns_to_drop)
+def natural_sort_key(value: str) -> List[object]:
+    """Sort strings naturally, e.g. 2 before 10."""
+    return [
+        int(token) if token.isdigit() else token.lower()
+        for token in re.split(r"(\d+)", value)
+    ]
 
 
-                # 对眨眼数据进行插值
-                df_s = Interpolate_blink(df_s)
-
-                # 合并原始信息
-                df_s['task_acc'] = int(df_t.columns[1])/10.0
-                df_s['task_time'] = df_s.shape[0]/120.0
-
-                df_info = pd.read_csv(info_path)
-                df_s['MMSE'] = df_info.loc[df_info['id'] == np.int64(folder_name), 'MMSE'].values[0]
-                df_s['edu'] = df_info.loc[df_info['id'] == np.int64(folder_name), 'edu'].values[0]
-                df_s['age'] = df_info.loc[df_info['id'] == np.int64(folder_name), 'age'].values[0]
-                df_s['gender'] = df_info.loc[df_info['id'] == np.int64(folder_name), 'gender'].values[0]
-                df_s['subjectNumber'] = df_info.loc[df_info['id'] == np.int64(folder_name), 'subjectNumber'].values[0]
-                
-                # 对一些整数列的插值进行四舍五入
-                columns_to_round = ['leftEye_openness', 'rightEye_openness']
-                df_s[columns_to_round] = df_s[columns_to_round].round(0)
-                if 'heartRate' in df_s.columns:
-                    df_s['heartRate'] = df_s['heartRate'].round(0) 
-
-                # #去除头尾4s的数据，划分样本，4s->480行
-                df_s = df_s.iloc[480:-480, :]
-
-                #对HC和MCI的label分类：按照MMSE分数标准分类
-                #label为0时是HC， label为1时是MCI
-                label = df_info.loc[df_info['id'] == np.int64(folder_name), 'label'].values[0]
-                
-                #把处理好的原始数据存放到正确的文件夹中
-                #type=0的时候存放数据集的内容
-                save_to_folder(df_s, i, is_have_heartrate, label, file, index[0], type=0)
-                
-                # 按每240行划分为多个样本
-                sample_time = 2 #每个样本的总时长
-                sample_size = 240 #样本大小
-                samples = [df_s.iloc[i:i + sample_size] for i in range(0, len(df_s), sample_size) if i + sample_size <= len(df_s)]
-
-                # 设置打印格式为不超过4位小数
-                pd.options.display.float_format = '{:.4f}'.format
-
-                #分开处理WH和WOH的特征集
-                if(is_have_heartrate):
-                    #特征列表
-                    df_feature_WH = []
-                    #遍历samples
-                    for idx, sample in enumerate(samples):
-                        # print(folder_name)
-                        # print(f'第{i}个场景:')
-                        # print(f"Sample {idx}:\n")
-                        #为每个样本添加时间戳
-                        sample = sample.copy()
-                        sample.loc[:, 'timestamp'] = np.linspace(0, sample_time, sample_size, endpoint=False)
-                        
-                        df_feature_sample = pd.DataFrame(columns=['fixation_num', 'fixations_position', 'fixations_times', 
-                                                                  'pupil_mean', 'pupil_std', 'pupil_median', 'pupil_max', 'pupil_min', 'pupil_range','pupil_change_rate',
-                                                                  'total_blinks', 'blink_durations', 'total_blink_duration', 'blink_rate', 'total_blinks_ratio', 'blink_intervals',
-                                                                  'mean_heart_rate', 'std_heart_rate', 'median_heart_rate'
-                                                                  ])
-                        df_feature_WH.append(df_feature_sample)
-                    
-                    #print(df_feature_WH)
-                    #把处理好的原始数据存放到正确的文件夹中
-                    #type=1的时候存放特征集的内容
-                    df_feature_WH_df = pd.concat(df_feature_WH, ignore_index=True)
-                    save_to_folder(df_feature_WH_df, i,is_have_heartrate, label, file, index[1], type=1)
-                else:
-                    #特征列表
-                    df_feature_WOH = []
-                    #遍历samples
-                    for idx, sample in enumerate(samples):
-                        # print(folder_name)
-                        # print(f'第{i}个场景:')
-                        # print(f"Sample {idx}:\n")
-                        #为每个样本添加时间戳
-                        sample = sample.copy()
-                        sample.loc[:, 'timestamp'] = np.linspace(0, sample_time, sample_size, endpoint=False)
-                        
-                        df_feature_sample = pd.DataFrame(columns=['fixation_num', 'fixations_position', 'fixations_times', 
-                                                                  'pupil_mean', 'pupil_std', 'pupil_median', 'pupil_max', 'pupil_min', 'pupil_range','pupil_change_rate',
-                                                                  'total_blinks', 'blink_durations', 'total_blink_duration', 'blink_rate', 'total_blinks_ratio', 'blink_intervals'
-                                                                  ])
-                        df_feature_WOH.append(df_feature_sample)
-                    #print(df_feature_WOH)
-                    #把处理好的原始数据存放到正确的文件夹中
-                    #type=1的时候存放特征集的内容
-                    df_feature_WOH_df = pd.concat(df_feature_WOH, ignore_index=True)
-                    save_to_folder(df_feature_WOH_df, i,is_have_heartrate, label, file, index[1], type=1)
-                
-                # 还原默认的打印格式（可选）
-                pd.reset_option('display.float_format')
-
-def cccc(data, window_size, overlap):
-    # 将数据转换为numpy数组
-    data = data.values
-    m, n = data.shape
-    if m > n:
-        data = data.transpose()
-    X, Y = [], []
-    length = (data.shape[1]-window_size)//(window_size-int(window_size*overlap)) + 1
-    return length
+def normalize_identifier(value: object) -> str:
+    """Normalize directory and metadata identifiers for matching."""
+    if pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if re.fullmatch(r"-?\d+\.0", text):
+        text = text[:-2]
+    return text
 
 
-def calculate_sample_number(path_to_folder, folder_num, strr):
+def validate_columns(df: pd.DataFrame, required: Sequence[str], source: Path) -> None:
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError(
+            "Missing required ET columns in {}: {}".format(
+                source, ", ".join(missing)
+            )
+        )
 
-    for i in range(1, folder_num+1):
-        file_path_A = path_to_folder + 'S' + str(i) + strr+ '/A.csv'
-        file_path_B = path_to_folder + 'S' + str(i) + strr+ '/B.csv'
-        file_path_C = path_to_folder + 'S' + str(i) + strr+ '/C.csv'
-        file_path_D = path_to_folder + 'S' + str(i) + strr+ '/D.csv'
-        df_A = pd.read_csv(file_path_A)
-        df_B = pd.read_csv(file_path_B)
-        df_C = pd.read_csv(file_path_C)
-        df_D = pd.read_csv(file_path_D)
-        len1 = cccc(df_A, 240, 0)
-        len2 = cccc(df_B, 240, 0)
-        len3 = cccc(df_C, 240, 0)
-        len4 = cccc(df_D, 240, 0)
-  
-        print(f'{file_path_A}的A样本数量为：{len1}')
-        print(f'{file_path_B}的B样本数量为：{len2}')
-        print(f'{file_path_C}的C样本数量为：{len3}')
-        print(f'{file_path_D}的D样本数量为：{len4}')
+
+def preprocess_signal_file(
+    sensor_csv: Path,
+    sample_rate: int = 120,
+    pupil_threshold_mm: float = 2.0,
+    trim_seconds: float = 4.0,
+    window_seconds: float = 2.0,
+) -> Tuple[pd.DataFrame, Dict[str, int]]:
+    """Preprocess one task-level sensor CSV."""
+    df = pd.read_csv(sensor_csv)
+    validate_columns(df, ET_COLUMNS, sensor_csv)
+
+    # The reported model input consists only of the 17 ET channels.
+    et = df.loc[:, ET_COLUMNS].apply(pd.to_numeric, errors="coerce")
+    original_rows = len(et)
+
+    # Remove records with missing left-eye openness.
+    missing_left_openness = et["leftEye_openness"].isna()
+    removed_missing_left_openness = int(missing_left_openness.sum())
+    et = et.loc[~missing_left_openness].copy()
+
+    if et.empty:
+        raise ValueError(
+            "No rows remain after removing missing left-eye openness: {}".format(
+                sensor_csv
+            )
+        )
+
+    # Preserve eye-closure indicators before blink reconstruction.
+    left_openness = et["leftEye_openness"].copy()
+    right_openness = et["rightEye_openness"].copy()
+
+    # Either pupil below the threshold identifies a blink-related invalid time.
+    blink_mask = (
+        (et["leftEye_pupil_dilation"] < pupil_threshold_mm)
+        | (et["rightEye_pupil_dilation"] < pupil_threshold_mm)
+    )
+    blink_timestamps = int(blink_mask.sum())
+
+    # Temporarily mark all 17 ET channels at invalid timestamps as missing.
+    et.loc[blink_mask, ET_COLUMNS] = np.nan
+
+    # Forward filling only: no bfill() and no fillna(0) are applied here.
+    et.loc[:, ET_COLUMNS] = et.loc[:, ET_COLUMNS].ffill()
+
+    # Restore the original openness channels.
+    et.loc[:, "leftEye_openness"] = left_openness
+    et.loc[:, "rightEye_openness"] = right_openness
+
+    trim_samples = int(round(trim_seconds * sample_rate))
+    window_samples = int(round(window_seconds * sample_rate))
+
+    if trim_samples < 0 or window_samples <= 0:
+        raise ValueError(
+            "trim_seconds must be non-negative and window_seconds must be positive."
+        )
+
+    if len(et) <= 2 * trim_samples:
+        raise ValueError(
+            "Recording is too short to remove {} samples from each end: {}".format(
+                trim_samples, sensor_csv
+            )
+        )
+
+    # Remove the first and last 4 s.
+    if trim_samples:
+        et = et.iloc[trim_samples:-trim_samples].copy()
+
+    # Keep complete, non-overlapping 2 s windows only.
+    complete_rows = (len(et) // window_samples) * window_samples
+    discarded_terminal_rows = len(et) - complete_rows
+    et = et.iloc[:complete_rows].reset_index(drop=True)
+
+    if et.empty:
+        raise ValueError(
+            "No complete {}-sample window remains: {}".format(
+                window_samples, sensor_csv
+            )
+        )
+
+    # Do not silently introduce undocumented bfill or zero replacement.
+    residual_missing_values = int(et.loc[:, ET_COLUMNS].isna().sum().sum())
+    if residual_missing_values:
+        raise ValueError(
+            "{} residual missing ET values remain after forward filling in {}. "
+            "Inspect the leading invalid interval rather than silently applying "
+            "backward filling or zero replacement.".format(
+                residual_missing_values, sensor_csv
+            )
+        )
+
+    stats = {
+        "original_rows": original_rows,
+        "removed_missing_left_openness": removed_missing_left_openness,
+        "blink_timestamps": blink_timestamps,
+        "retained_rows": len(et),
+        "complete_windows": len(et) // window_samples,
+        "discarded_terminal_rows": discarded_terminal_rows,
+        "residual_missing_values": residual_missing_values,
+    }
+    return et.loc[:, ET_COLUMNS], stats
+
+
+def load_metadata(
+    metadata_csv: Path,
+    subject_id_column: str,
+    label_column: str,
+) -> pd.DataFrame:
+    metadata = pd.read_csv(metadata_csv)
+    required = [subject_id_column, label_column]
+    missing = [column for column in required if column not in metadata.columns]
+    if missing:
+        raise ValueError(
+            "Missing metadata columns in {}: {}".format(
+                metadata_csv, ", ".join(missing)
+            )
+        )
+
+    metadata = metadata.copy()
+    metadata["_subject_key"] = metadata[subject_id_column].map(normalize_identifier)
+
+    duplicated = metadata["_subject_key"].duplicated(keep=False)
+    if duplicated.any():
+        duplicate_ids = sorted(metadata.loc[duplicated, "_subject_key"].unique())
+        raise ValueError(
+            "Duplicate subject IDs in metadata: {}".format(", ".join(duplicate_ids))
+        )
+
+    return metadata.set_index("_subject_key", drop=False)
+
+
+def discover_subject_directories(input_root: Path) -> List[Path]:
+    """Discover subjects without a hard-coded participant list."""
+    subjects = [path for path in input_root.iterdir() if path.is_dir()]
+    subjects.sort(key=lambda path: natural_sort_key(path.name))
+    if not subjects:
+        raise ValueError("No subject directories found under {}".format(input_root))
+    return subjects
+
+
+def group_name_from_label(raw_label: object, hc_label: int, mci_label: int) -> str:
+    try:
+        label = int(raw_label)
+    except (TypeError, ValueError):
+        raise ValueError("Participant label is not an integer: {!r}".format(raw_label))
+
+    if label == hc_label:
+        return "HC"
+    if label == mci_label:
+        return "MCI"
+    raise ValueError(
+        "Unsupported label {}. Expected HC label {} or MCI label {}.".format(
+            label, hc_label, mci_label
+        )
+    )
+
+
+def preprocess_dataset(args: argparse.Namespace) -> pd.DataFrame:
+    input_root = args.input_root.resolve()
+    output_root = args.output_root.resolve()
+    metadata_csv = args.metadata.resolve()
+
+    if not input_root.is_dir():
+        raise FileNotFoundError("Input root does not exist: {}".format(input_root))
+    if not metadata_csv.is_file():
+        raise FileNotFoundError("Metadata file does not exist: {}".format(metadata_csv))
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    metadata = load_metadata(
+        metadata_csv,
+        subject_id_column=args.subject_id_column,
+        label_column=args.label_column,
+    )
+    subject_dirs = discover_subject_directories(input_root)
+
+    group_counters: Dict[str, int] = {"HC": 0, "MCI": 0}
+    manifest_rows: List[Dict[str, object]] = []
+
+    for subject_dir in subject_dirs:
+        subject_key = normalize_identifier(subject_dir.name)
+        if subject_key not in metadata.index:
+            logging.warning(
+                "Skipping directory without metadata match: %s", subject_dir.name
+            )
+            continue
+
+        row = metadata.loc[subject_key]
+        group = group_name_from_label(
+            row[args.label_column],
+            hc_label=args.hc_label,
+            mci_label=args.mci_label,
+        )
+
+        # Automatically assign an anonymized group-specific index.
+        group_counters[group] += 1
+        subject_index = group_counters[group]
+        anonymized_subject = "{}_{:03d}".format(group, subject_index)
+
+        for task in args.tasks:
+            sensor_csv = subject_dir / args.sensor_pattern.format(task=task)
+            if not sensor_csv.is_file():
+                logging.warning("Missing task file: %s", sensor_csv)
+                continue
+
+            try:
+                processed, stats = preprocess_signal_file(
+                    sensor_csv=sensor_csv,
+                    sample_rate=args.sample_rate,
+                    pupil_threshold_mm=args.pupil_threshold_mm,
+                    trim_seconds=args.trim_seconds,
+                    window_seconds=args.window_seconds,
+                )
+            except Exception as exc:
+                if args.skip_errors:
+                    logging.error("Skipping %s because: %s", sensor_csv, exc)
+                    continue
+                raise
+
+            # Compatible layout: output_root/HC/1/1.csv, etc.
+            task_dir = output_root / group / str(task)
+            task_dir.mkdir(parents=True, exist_ok=True)
+            output_csv = task_dir / "{}.csv".format(subject_index)
+
+            if output_csv.exists() and not args.overwrite:
+                raise FileExistsError(
+                    "Output exists; use --overwrite to replace it: {}".format(
+                        output_csv
+                    )
+                )
+
+            processed.to_csv(output_csv, index=False)
+            manifest_rows.append(
+                {
+                    "subject": anonymized_subject,
+                    "group": group,
+                    "task": task,
+                    "output_file": str(output_csv.relative_to(output_root)),
+                    **stats,
+                }
+            )
+            logging.info(
+                "Saved %s task %s: %s complete windows -> %s",
+                anonymized_subject,
+                task,
+                stats["complete_windows"],
+                output_csv,
+            )
+
+    manifest = pd.DataFrame(manifest_rows)
+    if manifest.empty:
+        raise RuntimeError("No files were processed.")
+
+    manifest_path = args.manifest.resolve()
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest.to_csv(manifest_path, index=False)
+
+    logging.info("Saved preprocessing manifest: %s", manifest_path)
+    logging.info(
+        "Processed %d task files and retained %d complete windows.",
+        len(manifest),
+        int(manifest["complete_windows"].sum()),
+    )
+    return manifest
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Preprocess the 17-channel VR-CLD eye-tracking recordings."
+    )
+    parser.add_argument(
+        "--input-root",
+        type=Path,
+        required=True,
+        help="Directory containing one subdirectory per participant.",
+    )
+    parser.add_argument(
+        "--metadata",
+        type=Path,
+        required=True,
+        help="CSV containing participant IDs and HC/MCI labels.",
+    )
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        required=True,
+        help="Destination for preprocessed task CSV files.",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("preprocessing_manifest.csv"),
+        help="Destination for the anonymized preprocessing summary CSV.",
+    )
+    parser.add_argument(
+        "--subject-id-column",
+        default="id",
+        help="Participant-ID column in the metadata CSV.",
+    )
+    parser.add_argument(
+        "--label-column",
+        default="label",
+        help="HC/MCI label column in the metadata CSV.",
+    )
+    parser.add_argument("--hc-label", type=int, default=0)
+    parser.add_argument("--mci-label", type=int, default=1)
+    parser.add_argument(
+        "--tasks",
+        type=int,
+        nargs="+",
+        default=[1, 2, 3, 4],
+        help="Task identifiers to process.",
+    )
+    parser.add_argument(
+        "--sensor-pattern",
+        default="sensordata{task}.csv",
+        help="Task filename pattern; use {task} as the placeholder.",
+    )
+    parser.add_argument("--sample-rate", type=int, default=120)
+    parser.add_argument("--pupil-threshold-mm", type=float, default=2.0)
+    parser.add_argument("--trim-seconds", type=float, default=4.0)
+    parser.add_argument("--window-seconds", type=float, default=2.0)
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--skip-errors", action="store_true")
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+    )
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(levelname)s: %(message)s",
+    )
+    preprocess_dataset(args)
 
 
 if __name__ == "__main__":
-    # 最终实验仅使用原始采样率为120 Hz的数据
-    path_to_folders = '/public/home/seu_test3/RML/120hz'
-    info_path = '/public/home/seu_test3/RML/info.csv'
-
-    # 分别记录Data和Feature目录中四类受试者的当前编号
-    index = [
-        [0, 0, 0, 0],
-        [0, 0, 0, 0]
-    ]
-
-    preprocess(
-        index,
-        path_to_folders,
-        info_path
-    )
-    # hc_path_wh = f'C:\\Users\\Administrator\\Desktop\\Data_new\\数据集\\WH\\HC\\HC '
-    # hc_path_wh_num = 14
-    # mci_path_wh = f'C:\\Users\\Administrator\\Desktop\\Data_new\\数据集\\WH\\MCI\\MCI '
-    # mci_path_wh_num = 11
-    # hc_path_woh = f'C:\\Users\\Administrator\\Desktop\\Data_new\\数据集\\WOH\\HC\\HC '
-    # hc_path_woh_num = 3
-    # mci_path_woh = f'C:\\Users\\Administrator\\Desktop\\Data_new\\数据集\\WOH\\MCI\\MCI '
-    # mci_path_woh_num = 7
-    # str1 = ' WH'
-    # str2 = ' WOH'
-    # calculate_sample_number(hc_path_wh, hc_path_wh_num, str1)
-    # calculate_sample_number(mci_path_wh, mci_path_wh_num, str1)
-    # calculate_sample_number(hc_path_woh, hc_path_woh_num, str2)
-    # calculate_sample_number(mci_path_woh, mci_path_woh_num, str2)
+    main()
