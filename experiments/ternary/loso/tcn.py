@@ -616,7 +616,7 @@ def main():
 
         print(f"[TCN-LOSO][{dtype}] 受试者数（有效）：{len(valid_keys)}")
 
-        for key in valid_keys:
+        for fold_idx, key in enumerate(valid_keys):
             pop, sid = key
             fold_dir = os.path.join(res_dir, f"subj_{pop}_{sid:02d}")
             os.makedirs(fold_dir, exist_ok=True)
@@ -650,7 +650,7 @@ def main():
             train_idx, val_idx = train_test_split(
                 all_indices,
                 test_size=args.val_ratio,
-                random_state=42 + k,
+                random_state=42 + fold_idx,
                 shuffle=True,
                 stratify=stratify_labels
             )
@@ -684,7 +684,7 @@ def main():
             test_ds = TensorDataset(Xte_tensor, Yte_tensor)
             
             # 固定训练数据加载顺序，提高可复现性
-            loader_generator = torch.Generator().manual_seed(42)
+            loader_generator = torch.Generator().manual_seed(42 + fold_idx)
             
             train_loader = DataLoader(
                 trn_ds,
@@ -705,13 +705,7 @@ def main():
                 shuffle=False
             )
             
-            print(
-                f"[Split][{dtype}][Fold {k + 1}] "
-                f"inner_train={len(Ytrain)}, "
-                f"validation={len(Yval)}, "
-                f"outer_test={len(Yte)}"
-            )
-
+  
             model = TCN(in_channels=C, num_classes=num_classes,
                         channels=chan_list, kernel_size=args.kernel_size, dropout=args.dropout)
 
