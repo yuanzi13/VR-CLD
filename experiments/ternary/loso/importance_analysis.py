@@ -471,7 +471,7 @@ def run_fold(model, device, train_loader, val_loader, test_loader, epochs, lr, w
     return np.array(y_true), np.array(y_pred), np.array(y_prob), feats_arr, labels_arr, fold_feat_score
 
 # ------------------------ 比较 ROC ------------------------
-def plot_binary_roc_compare(entries, save_path, title="LCL vs HCL ROC Comparison"):
+def plot_binary_roc_compare(entries, save_path, title="ROC Comparison"):
     plt.figure(figsize=(6.4,6.0))
     colors = ['#1f77b4', '#2ca02c', '#d62728', '#9467bd']
     plotted = 0
@@ -711,8 +711,8 @@ def main():
                       title=f"{dtype} TCN LOSO Overall t-SNE", dpi=300)
 
     if compare_entries:
-        comp_save = os.path.join(args.result_dir, "roc_compare_LCL_vs_HCL.png")
-        plot_binary_roc_compare(compare_entries, comp_save, title="LCL vs HCL ROC: MCI / HC / ALL")
+        comp_save = os.path.join(args.result_dir, "roc_compare_CL.png")
+        plot_binary_roc_compare(compare_entries, comp_save, title="ROC: MCI / HC / ALL")
         print(f"Saved comparison ROC: {comp_save}")
 
     print("All done.")
