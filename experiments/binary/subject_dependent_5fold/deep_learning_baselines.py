@@ -560,22 +560,43 @@ def binary_metrics(
     probability = np.asarray(hcl_probability, dtype=np.float64)
 
     return {
-        "accuracy": float(accuracy_score(truth, prediction)),
-        # Paper-facing metrics: LCL=0 is the positive class.
+        "accuracy": float(
+            accuracy_score(truth, prediction)
+        ),
+        
+        # Paper-facing binary metrics:
+        # HCL=1 is consistently treated as the positive class.
         "precision": float(
             precision_score(
-                truth, prediction, pos_label=0, zero_division=0
+                truth,
+                prediction,
+                pos_label=1,
+                zero_division=0
             )
         ),
+        
         "recall": float(
             recall_score(
-                truth, prediction, pos_label=0, zero_division=0
+                truth,
+                prediction,
+                pos_label=1,
+                zero_division=0
             )
         ),
+        
         "f1": float(
-            f1_score(truth, prediction, pos_label=0, zero_division=0)
+            f1_score(
+                truth,
+                prediction,
+                pos_label=1,
+                zero_division=0
+            )
         ),
-        "auc": safe_auc(truth, probability),
+        
+        "auc": safe_auc(
+            truth,
+            probability
+        ),
         "precision_lcl": float(
             precision_score(
                 truth, prediction, pos_label=0, zero_division=0
