@@ -649,7 +649,7 @@ def main():
             
             train_idx, val_idx = train_test_split(
                 all_indices,
-                test_size=args.val_ratio,
+                test_size=0.1,
                 random_state=42 + fold_idx,
                 shuffle=True,
                 stratify=stratify_labels
